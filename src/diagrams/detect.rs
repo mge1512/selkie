@@ -9,8 +9,9 @@ use crate::error::{MermaidError, Result};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DiagramType {
     Flowchart,
-    Pie,
+    Info,
     Mindmap,
+    Pie,
 }
 
 // Regex patterns for detecting diagram types
@@ -21,6 +22,8 @@ static FLOWCHART_RE: LazyLock<Regex> = LazyLock::new(|| {
 static PIE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)^\s*pie").unwrap());
 
 static MINDMAP_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)^\s*mindmap").unwrap());
+
+static INFO_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)^\s*info").unwrap());
 
 /// Detect the type of diagram from input text
 pub fn detect_type(input: &str) -> Result<DiagramType> {
@@ -34,6 +37,10 @@ pub fn detect_type(input: &str) -> Result<DiagramType> {
 
     if MINDMAP_RE.is_match(&cleaned) {
         return Ok(DiagramType::Mindmap);
+    }
+
+    if INFO_RE.is_match(&cleaned) {
+        return Ok(DiagramType::Info);
     }
 
     if FLOWCHART_RE.is_match(&cleaned) {
@@ -105,6 +112,13 @@ mod tests {
             detect_type("  mindmap\n  root").unwrap(),
             DiagramType::Mindmap
         );
+    }
+
+    #[test]
+    fn detect_info() {
+        assert_eq!(detect_type("info").unwrap(), DiagramType::Info);
+        assert_eq!(detect_type("info showInfo").unwrap(), DiagramType::Info);
+        assert_eq!(detect_type("  info").unwrap(), DiagramType::Info);
     }
 
     #[test]
