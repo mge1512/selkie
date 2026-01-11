@@ -101,6 +101,7 @@ namespace_statement = {
     comment_stmt
     | class_stmt
     | relationship_stmt
+    | note_stmt
 }
 
 // ==================
@@ -229,12 +230,16 @@ note_stmt = {
 }
 
 note_for_stmt = {
-    "note" ~ "for" ~ class_name ~ quoted_text
+    "note" ~ "for" ~ class_name ~ note_content
 }
 
 note_general_stmt = {
-    "note" ~ quoted_text
+    "note" ~ note_content
 }
+
+// Note content is a quoted string that allows internal quotes (for HTML content)
+// It starts with " and consumes until " followed by end of line or end of input
+note_content = @{ "\"" ~ (!("\"" ~ (NEWLINE | EOI)) ~ ANY)* ~ "\"" }
 
 // ==================
 // Click/Link/Callback

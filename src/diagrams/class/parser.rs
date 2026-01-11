@@ -504,8 +504,9 @@ fn process_note_stmt(db: &mut ClassDb, pair: pest::iterators::Pair<Rule>) -> Res
                         Rule::class_name => {
                             class_name = cleanup_class_name(note_inner.as_str());
                         }
-                        Rule::quoted_text => {
+                        Rule::note_content => {
                             let s = note_inner.as_str();
+                            // Remove surrounding quotes
                             text = s[1..s.len() - 1].to_string();
                         }
                         _ => {}
@@ -516,8 +517,9 @@ fn process_note_stmt(db: &mut ClassDb, pair: pest::iterators::Pair<Rule>) -> Res
             Rule::note_general_stmt => {
                 let mut text = String::new();
                 for note_inner in inner.into_inner() {
-                    if note_inner.as_rule() == Rule::quoted_text {
+                    if note_inner.as_rule() == Rule::note_content {
                         let s = note_inner.as_str();
+                        // Remove surrounding quotes
                         text = s[1..s.len() - 1].to_string();
                     }
                 }

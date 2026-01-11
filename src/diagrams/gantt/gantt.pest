@@ -112,8 +112,9 @@ title_stmt = {
     ^"title" ~ title_text
 }
 
+// Title text can contain semicolons - only stop at actual newlines
 title_text = @{
-    (!(NEWLINE | ";") ~ ANY)+
+    (!("\r\n" | "\n") ~ ANY)+
 }
 
 acc_title_stmt = {
@@ -143,8 +144,9 @@ section_stmt = {
     ^"section" ~ section_text
 }
 
+// Section text can contain semicolons - only stop at actual newlines
 section_text = @{
-    (!(NEWLINE | ";") ~ ANY)+
+    (!("\r\n" | "\n") ~ ANY)+
 }
 
 // ==================

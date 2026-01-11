@@ -350,16 +350,17 @@ arrow_type = @{
     "->>()-" | "->>()+" | "-->>()-" | "-->>()+" |
     "-x()-" | "-x()+" | "--x()-" | "--x()+" |
     "->>(" | "-->>(" | "-)(" | "--)(" |
-    // Half arrows - solid (with |) - dotted reverse first (longer)
-    "/|--" | "\\|--" |        // Solid half arrow reverse dotted
-    "--|/" | "--|\\" |        // Solid half arrow dotted
-    "/|-" | "\\|-" |          // Solid half arrow reverse
-    "-|/" | "-|\\" |          // Solid half arrow
-    // Half arrows - stick (no |) - dotted reverse first (longer)
-    "//--" | "\\\\--" |       // Stick half arrow reverse dotted
-    "--//" | "--\\\\" |       // Stick half arrow dotted
-    "//-" | "\\\\-" |         // Stick half arrow reverse
-    "-//" | "-\\\\" |         // Stick half arrow
+    // Half arrows - solid (with |) - dotted (longer patterns first)
+    // Double-backslash variants (for escaped test data) must come before single-backslash
+    "\\\\|--" | "/|--" | "\\|--" |       // Solid half arrow reverse dotted
+    "--|/" | "--|\\\\" | "--|\\" |       // Solid half arrow dotted
+    "\\\\|-" | "/|-" | "\\|-" |          // Solid half arrow reverse
+    "-|/" | "-|\\\\" | "-|\\" |          // Solid half arrow
+    // Half arrows - stick (no |) - dotted (longer patterns first)
+    "\\\\\\\\--" | "//--" | "\\\\--" |   // Stick half arrow reverse dotted
+    "--//" | "--\\\\\\\\" | "--\\\\" |   // Stick half arrow dotted
+    "\\\\\\\\-" | "//-" | "\\\\-" |      // Stick half arrow reverse
+    "-//" | "-\\\\\\\\" | "-\\\\" |      // Stick half arrow
     // Standard arrows - longer first
     "->>-" | "->>+" | "-->>-" | "-->>+" |
     "->-" | "->+" | "-->-" | "-->+" |
