@@ -32,8 +32,12 @@ statement = {
     | state_declaration
     | note_stmt
     | transition_stmt
+    | divider_stmt
     | state_with_description
 }
+
+// Concurrent region divider (standalone -- not followed by >)
+divider_stmt = { "--" ~ !(">" | "-") }
 
 // Standalone state with optional description (shorthand without "state" keyword)
 state_with_description = {
@@ -138,7 +142,7 @@ state_declaration = {
 }
 
 state_def = {
-    state_with_body | state_special | state_alias | state_simple
+    state_with_body | state_special | state_quoted_alias | state_alias | state_simple
 }
 
 // State with composite body
@@ -146,14 +150,19 @@ state_with_body = {
     (quoted_string | state_id) ~ alias? ~ "{" ~ document ~ "}"
 }
 
-// Special state types
+// Special state types (support both << >> and HTML entity &lt;&lt; &gt;&gt;)
 state_special = {
-    state_id ~ "<<" ~ special_type ~ ">>"
+    state_id ~ (("<<" | "&lt;&lt;") ~ special_type ~ (">>" | "&gt;&gt;"))
 }
 
 special_type = { ^"fork" | ^"join" | ^"choice" }
 
-// State with alias
+// State with quoted description and alias: state "Description" as ID
+state_quoted_alias = {
+    quoted_string ~ ^"as" ~ state_id ~ state_description?
+}
+
+// State with alias (ID to quoted): state ID as "Description"
 state_alias = {
     state_id ~ ^"as" ~ quoted_string
 }

@@ -388,14 +388,23 @@ fn process_note_stmt(
                 } else {
                     placement = Placement::RightOf;
                 }
+                // Extract actors from note_placement (for left/right of)
                 for actor in inner.into_inner() {
-                    if actor.as_rule() == Rule::actor_name {
-                        actors.push(actor.as_str().to_string());
+                    match actor.as_rule() {
+                        Rule::actor_name => {
+                            actors.push(actor.as_str().to_string());
+                        }
+                        Rule::actor_list => {
+                            // Handle comma-separated actor list for "over" notes
+                            for list_item in actor.into_inner() {
+                                if list_item.as_rule() == Rule::actor_name {
+                                    actors.push(list_item.as_str().to_string());
+                                }
+                            }
+                        }
+                        _ => {}
                     }
                 }
-            }
-            Rule::actor_name => {
-                actors.push(inner.as_str().to_string());
             }
             Rule::note_text => {
                 text = inner.as_str().trim().to_string();
@@ -623,6 +632,20 @@ queue Q",
             let db = result.unwrap();
             assert_eq!(db.get_actors().len(), 8);
         }
+
+        #[test]
+        fn should_parse_participant_with_metadata() {
+            let result = parse(
+                r#"sequenceDiagram
+participant User@{ "type": "actor" }
+participant AuthService@{ "type": "control" }
+User->>AuthService: Login"#,
+            );
+            assert!(result.is_ok());
+            let db = result.unwrap();
+            assert!(db.get_actors().contains_key("User"));
+            assert!(db.get_actors().contains_key("AuthService"));
+        }
     }
 
     mod arrow_types {
@@ -745,6 +768,26 @@ queue Q",
             let db = result.unwrap();
             let notes = db.get_notes();
             assert_eq!(notes[0].placement, Placement::Over);
+        }
+
+        #[test]
+        fn should_parse_note_over_multiple_actors() {
+            let result = parse("sequenceDiagram\nNote over A,B: Spanning note");
+            assert!(result.is_ok());
+            let db = result.unwrap();
+            let notes = db.get_notes();
+            assert_eq!(notes.len(), 1);
+            assert_eq!(notes[0].placement, Placement::Over);
+            assert_eq!(notes[0].message, "Spanning note");
+        }
+
+        #[test]
+        fn should_parse_note_with_capital_n() {
+            let result = parse("sequenceDiagram\nNote right of Alice: Capital note");
+            assert!(result.is_ok());
+            let db = result.unwrap();
+            let notes = db.get_notes();
+            assert_eq!(notes[0].placement, Placement::RightOf);
         }
     }
 

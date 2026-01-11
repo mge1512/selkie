@@ -50,7 +50,7 @@ statement = {
 }
 
 // Generic end statement - used to close any block
-end_stmt = { "end" }
+end_stmt = { ^"end" }
 
 // ==================
 // Comments
@@ -63,11 +63,11 @@ comment_stmt = { "%%" ~ (!NEWLINE ~ ANY)* }
 // ==================
 
 title_stmt = {
-    "title" ~ ":"? ~ line_content
+    ^"title" ~ ":"? ~ line_content
 }
 
 acc_title_stmt = {
-    "accTitle" ~ ":" ~ line_content
+    ^"accTitle" ~ ":" ~ line_content
 }
 
 acc_descr_stmt = {
@@ -75,11 +75,11 @@ acc_descr_stmt = {
 }
 
 acc_descr_single = {
-    "accDescr" ~ ":" ~ line_content
+    ^"accDescr" ~ ":" ~ line_content
 }
 
 acc_descr_multi = {
-    "accDescr" ~ "{" ~ multiline_content ~ "}"
+    ^"accDescr" ~ "{" ~ multiline_content ~ "}"
 }
 
 line_content = @{ (!NEWLINE ~ ANY)* }
@@ -90,10 +90,29 @@ multiline_content = @{ (!"}" ~ ANY)* }
 // ==================
 
 participant_stmt = {
-    participant_type ~ actor_name ~ alias_def?
+    participant_type ~ actor_name ~ participant_metadata? ~ alias_def?
 }
 
-participant_type = { "participant" | "actor" | "boundary" | "control" | "entity" | "database" | "collections" | "queue" }
+participant_type = { ^"participant" | ^"actor" | ^"boundary" | ^"control" | ^"entity" | ^"database" | ^"collections" | ^"queue" }
+
+// Participant metadata like @{ "type": "actor" }
+participant_metadata = { "@" ~ json_object }
+
+json_object = @{
+    "{" ~ json_inner ~ "}"
+}
+
+json_inner = @{
+    (json_string | json_nested | !("{" | "}") ~ ANY)*
+}
+
+json_string = @{
+    "\"" ~ (!"\"" ~ ANY | "\\\"")* ~ "\""
+}
+
+json_nested = @{
+    "{" ~ json_inner ~ "}"
+}
 
 // Actor name - dashes are allowed but not when followed by arrow characters
 actor_name = @{
@@ -116,7 +135,7 @@ actor_description = @{
 // ==================
 
 box_start = {
-    "box" ~ box_color? ~ box_title?
+    ^"box" ~ box_color? ~ box_title?
 }
 
 box_color = @{
@@ -132,11 +151,11 @@ box_title = @{
 // ==================
 
 autonumber_stmt = {
-    "autonumber" ~ autonumber_args?
+    ^"autonumber" ~ autonumber_args?
 }
 
 autonumber_args = {
-    ("off" | number ~ number?)
+    (^"off" | number ~ number?)
 }
 
 number = @{ ASCII_DIGIT+ }
@@ -146,11 +165,11 @@ number = @{ ASCII_DIGIT+ }
 // ==================
 
 activate_stmt = {
-    "activate" ~ actor_name
+    ^"activate" ~ actor_name
 }
 
 deactivate_stmt = {
-    "deactivate" ~ actor_name
+    ^"deactivate" ~ actor_name
 }
 
 // ==================
@@ -158,7 +177,7 @@ deactivate_stmt = {
 // ==================
 
 loop_start = {
-    "loop" ~ loop_text?
+    ^"loop" ~ loop_text?
 }
 
 loop_text = @{
@@ -166,11 +185,11 @@ loop_text = @{
 }
 
 alt_start = {
-    "alt" ~ alt_text?
+    ^"alt" ~ alt_text?
 }
 
 alt_else = {
-    "else" ~ alt_text?
+    ^"else" ~ alt_text?
 }
 
 alt_text = @{
@@ -178,7 +197,7 @@ alt_text = @{
 }
 
 opt_start = {
-    "opt" ~ opt_text?
+    ^"opt" ~ opt_text?
 }
 
 opt_text = @{
@@ -186,11 +205,11 @@ opt_text = @{
 }
 
 par_start = {
-    "par" ~ par_text?
+    ^"par" ~ par_text?
 }
 
 par_and = {
-    "and" ~ par_text?
+    ^"and" ~ par_text?
 }
 
 par_text = @{
@@ -198,11 +217,11 @@ par_text = @{
 }
 
 critical_start = {
-    "critical" ~ critical_text?
+    ^"critical" ~ critical_text?
 }
 
 critical_option = {
-    "option" ~ critical_text?
+    ^"option" ~ critical_text?
 }
 
 critical_text = @{
@@ -210,7 +229,7 @@ critical_text = @{
 }
 
 break_start = {
-    "break" ~ break_text?
+    ^"break" ~ break_text?
 }
 
 break_text = @{
@@ -218,7 +237,7 @@ break_text = @{
 }
 
 rect_start = {
-    "rect" ~ rect_color?
+    ^"rect" ~ rect_color?
 }
 
 rect_color = @{
@@ -230,11 +249,11 @@ rect_color = @{
 // ==================
 
 links_stmt = {
-    "links" ~ actor_name ~ ":" ~ json_content
+    ^"links" ~ actor_name ~ ":" ~ json_content
 }
 
 link_stmt = {
-    "link" ~ actor_name ~ ":" ~ link_name ~ "@" ~ link_url
+    ^"link" ~ actor_name ~ ":" ~ link_name ~ "@" ~ link_url
 }
 
 link_name = @{
@@ -246,7 +265,7 @@ link_url = @{
 }
 
 properties_stmt = {
-    "properties" ~ actor_name ~ ":" ~ json_content
+    ^"properties" ~ actor_name ~ ":" ~ json_content
 }
 
 json_content = @{
@@ -258,11 +277,11 @@ json_content = @{
 // ==================
 
 create_stmt = {
-    "create" ~ participant_type ~ actor_name ~ alias_def?
+    ^"create" ~ participant_type ~ actor_name ~ participant_metadata? ~ alias_def?
 }
 
 destroy_stmt = {
-    "destroy" ~ actor_name
+    ^"destroy" ~ actor_name
 }
 
 // ==================
@@ -270,14 +289,17 @@ destroy_stmt = {
 // ==================
 
 note_stmt = {
-    "note" ~ note_placement ~ ("," ~ actor_name)* ~ note_separator ~ note_text
+    ^"note" ~ note_placement ~ note_separator ~ note_text
 }
 
 note_placement = {
-    ("left" ~ "of" | "leftof") ~ actor_name |
-    ("right" ~ "of" | "rightof") ~ actor_name |
-    "over" ~ actor_name
+    (^"left" ~ ^"of" | ^"leftof") ~ actor_name |
+    (^"right" ~ ^"of" | ^"rightof") ~ actor_name |
+    ^"over" ~ actor_list
 }
+
+// Comma-separated list of actors for "over" notes
+actor_list = { actor_name ~ ("," ~ actor_name)* }
 
 note_separator = _{ ":" }
 
