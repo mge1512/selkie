@@ -806,4 +806,616 @@ end"#;
         let db = result.unwrap();
         assert_eq!(db.subgraphs().len(), 2);
     }
+
+    // Tests from flow.spec.js
+    mod flow_spec_tests {
+        use super::*;
+
+        #[test]
+        #[ignore = "TODO: Add comment support (%%) to grammar"]
+        fn should_handle_trailing_whitespaces_after_statements() {
+            let input = "graph TD;\n\n\n %% Comment\n A-->B; \n B-->C;";
+            let result = parse(input);
+            assert!(result.is_ok(), "Failed to parse: {:?}", result);
+            let db = result.unwrap();
+            let vert = db.get_vertices();
+            let edges = db.get_edges();
+
+            assert!(vert.contains_key("A"));
+            assert!(vert.contains_key("B"));
+            assert_eq!(edges.len(), 2);
+            assert_eq!(edges[0].start, "A");
+            assert_eq!(edges[0].end, "B");
+        }
+
+        #[test]
+        #[ignore = "TODO: Fix identifier parsing to allow 'end' prefix"]
+        fn should_handle_node_names_with_end_substring() {
+            let input = "graph TD\nendpoint --> sender";
+            let result = parse(input);
+            assert!(result.is_ok(), "Failed to parse: {:?}", result);
+            let db = result.unwrap();
+            let vert = db.get_vertices();
+            let edges = db.get_edges();
+
+            assert!(vert.contains_key("endpoint"));
+            assert!(vert.contains_key("sender"));
+            assert_eq!(edges[0].start, "endpoint");
+            assert_eq!(edges[0].end, "sender");
+        }
+
+        #[test]
+        fn should_handle_node_names_ending_with_keywords() {
+            let input = "graph TD\nblend --> monograph";
+            let result = parse(input);
+            assert!(result.is_ok(), "Failed to parse: {:?}", result);
+            let db = result.unwrap();
+            let vert = db.get_vertices();
+
+            assert!(vert.contains_key("blend"));
+            assert!(vert.contains_key("monograph"));
+        }
+
+        #[test]
+        fn should_allow_default_in_node_name() {
+            let input = "graph TD\ndefault --> monograph";
+            let result = parse(input);
+            assert!(result.is_ok(), "Failed to parse: {:?}", result);
+            let db = result.unwrap();
+            let vert = db.get_vertices();
+
+            assert!(vert.contains_key("default"));
+            assert!(vert.contains_key("monograph"));
+        }
+
+        #[test]
+        fn should_parse_special_char_period() {
+            let input = "graph TD;A(.)-->B;";
+            let result = parse(input);
+            assert!(result.is_ok(), "Failed to parse period: {:?}", result);
+            let db = result.unwrap();
+            let vert = db.get_vertices();
+            assert!(vert.contains_key("A"));
+            assert_eq!(vert.get("A").unwrap().text, Some(".".to_string()));
+        }
+
+        #[test]
+        fn should_parse_special_char_colon() {
+            let input = "graph TD;A(:)-->B;";
+            let result = parse(input);
+            assert!(result.is_ok(), "Failed to parse colon: {:?}", result);
+            let db = result.unwrap();
+            let vert = db.get_vertices();
+            assert!(vert.contains_key("A"));
+            assert_eq!(vert.get("A").unwrap().text, Some(":".to_string()));
+        }
+
+        #[test]
+        fn should_parse_special_char_comma() {
+            let input = "graph TD;A(,)-->B;";
+            let result = parse(input);
+            assert!(result.is_ok(), "Failed to parse comma: {:?}", result);
+            let db = result.unwrap();
+            let vert = db.get_vertices();
+            assert!(vert.contains_key("A"));
+        }
+
+        #[test]
+        fn should_parse_text_with_dash() {
+            let input = "graph TD;A(a-b)-->B;";
+            let result = parse(input);
+            assert!(result.is_ok(), "Failed to parse dash: {:?}", result);
+            let db = result.unwrap();
+            let vert = db.get_vertices();
+            assert_eq!(vert.get("A").unwrap().text, Some("a-b".to_string()));
+        }
+
+        #[test]
+        fn should_parse_special_char_plus() {
+            let input = "graph TD;A(+)-->B;";
+            let result = parse(input);
+            assert!(result.is_ok(), "Failed to parse plus: {:?}", result);
+        }
+
+        #[test]
+        fn should_parse_special_char_asterisk() {
+            let input = "graph TD;A(*)-->B;";
+            let result = parse(input);
+            assert!(result.is_ok(), "Failed to parse asterisk: {:?}", result);
+        }
+
+        #[test]
+        fn should_parse_special_char_ampersand() {
+            let input = "graph TD;A(&)-->B;";
+            let result = parse(input);
+            assert!(result.is_ok(), "Failed to parse ampersand: {:?}", result);
+        }
+
+        #[test]
+        fn should_use_direction_in_node_ids() {
+            let input = "graph TD;\n  node1TB\n";
+            let result = parse(input);
+            assert!(result.is_ok(), "Failed to parse: {:?}", result);
+            let db = result.unwrap();
+            assert!(db.get_vertices().contains_key("node1TB"));
+        }
+
+        #[test]
+        #[ignore = "TODO: Add quoted subgraph title support"]
+        fn should_allow_numbers_as_labels() {
+            let input = r#"graph TB;subgraph "number as labels";1;end;"#;
+            let result = parse(input);
+            assert!(result.is_ok(), "Failed to parse: {:?}", result);
+            let db = result.unwrap();
+            assert!(db.get_vertices().contains_key("1"));
+        }
+
+        #[test]
+        fn should_add_acc_title_and_acc_descr() {
+            let input = r#"graph LR
+accTitle: Big decisions
+accDescr: Flow chart of the decision making process
+A[Hard] -->|Text| B(Round)"#;
+            let result = parse(input);
+            assert!(result.is_ok(), "Failed to parse: {:?}", result);
+            let db = result.unwrap();
+            assert_eq!(db.get_acc_title(), Some("Big decisions"));
+            assert_eq!(db.get_acc_description(), Some("Flow chart of the decision making process"));
+        }
+
+        #[test]
+        fn should_add_multiline_acc_descr() {
+            let input = r#"graph LR
+accTitle: Big decisions
+accDescr {
+    Flow chart of the decision making process
+    with a second line
+}
+A[Hard] -->|Text| B(Round)"#;
+            let result = parse(input);
+            assert!(result.is_ok(), "Failed to parse: {:?}", result);
+            let db = result.unwrap();
+            assert_eq!(db.get_acc_title(), Some("Big decisions"));
+            // The multiline description should contain the text
+            let descr = db.get_acc_description().unwrap();
+            assert!(descr.contains("Flow chart"));
+            assert!(descr.contains("second line"));
+        }
+    }
+
+    // Tests from flow-edges.spec.js
+    mod flow_edges_tests {
+        use super::*;
+        use crate::diagrams::flowchart::types::EdgeStroke;
+
+        #[test]
+        #[ignore = "TODO: Add open-ended edge (---) support to grammar"]
+        fn should_handle_open_ended_edges() {
+            let input = "graph TD;A---B;";
+            let result = parse(input);
+            assert!(result.is_ok(), "Failed to parse open edge: {:?}", result);
+            let db = result.unwrap();
+            let edges = db.get_edges();
+            assert_eq!(edges.len(), 1);
+            assert_eq!(edges[0].start, "A");
+            assert_eq!(edges[0].end, "B");
+        }
+
+        #[test]
+        #[ignore = "TODO: Add cross arrow (--x) support to grammar"]
+        fn should_handle_cross_ended_edges() {
+            let input = "graph TD;A--xB;";
+            let result = parse(input);
+            assert!(result.is_ok(), "Failed to parse cross edge: {:?}", result);
+            let db = result.unwrap();
+            assert_eq!(db.get_edges().len(), 1);
+        }
+
+        #[test]
+        #[ignore = "TODO: Add circle arrow (--o) support to grammar"]
+        fn should_handle_circle_ended_edges() {
+            let input = "graph TD;A--oB;";
+            let result = parse(input);
+            assert!(result.is_ok(), "Failed to parse circle edge: {:?}", result);
+            let db = result.unwrap();
+            assert_eq!(db.get_edges().len(), 1);
+        }
+
+        #[test]
+        #[ignore = "TODO: Add pipe text (|text|) edge support to grammar"]
+        fn should_handle_multiple_edges_with_text() {
+            let input = "graph TD;A---|This is the 123 s text|B;\nA---|This is the second edge|B;";
+            let result = parse(input);
+            assert!(result.is_ok(), "Failed to parse: {:?}", result);
+            let db = result.unwrap();
+            let edges = db.get_edges();
+
+            assert_eq!(edges.len(), 2);
+            assert_eq!(edges[0].start, "A");
+            assert_eq!(edges[0].end, "B");
+            assert_eq!(edges[0].text, "This is the 123 s text");
+            assert_eq!(edges[1].text, "This is the second edge");
+        }
+
+        #[test]
+        fn should_handle_normal_edges_length_1() {
+            let input = "graph TD;\nA --- B;";
+            let result = parse(input);
+            assert!(result.is_ok(), "Failed to parse: {:?}", result);
+            let db = result.unwrap();
+            assert_eq!(db.get_edges().len(), 1);
+        }
+
+        #[test]
+        fn should_handle_normal_edges_length_2() {
+            let input = "graph TD;\nA ---- B;";
+            let result = parse(input);
+            assert!(result.is_ok(), "Failed to parse: {:?}", result);
+            let db = result.unwrap();
+            assert_eq!(db.get_edges().len(), 1);
+        }
+
+        #[test]
+        fn should_handle_normal_edges_length_3() {
+            let input = "graph TD;\nA ----- B;";
+            let result = parse(input);
+            assert!(result.is_ok(), "Failed to parse: {:?}", result);
+            let db = result.unwrap();
+            assert_eq!(db.get_edges().len(), 1);
+        }
+
+        #[test]
+        fn should_handle_arrow_edges_length_1() {
+            let input = "graph TD;\nA --> B;";
+            let result = parse(input);
+            assert!(result.is_ok(), "Failed to parse: {:?}", result);
+            let db = result.unwrap();
+            assert_eq!(db.get_edges().len(), 1);
+        }
+
+        #[test]
+        fn should_handle_arrow_edges_length_2() {
+            let input = "graph TD;\nA ---> B;";
+            let result = parse(input);
+            assert!(result.is_ok(), "Failed to parse: {:?}", result);
+            let db = result.unwrap();
+            assert_eq!(db.get_edges().len(), 1);
+        }
+
+        #[test]
+        fn should_handle_arrow_edges_length_3() {
+            let input = "graph TD;\nA ----> B;";
+            let result = parse(input);
+            assert!(result.is_ok(), "Failed to parse: {:?}", result);
+            let db = result.unwrap();
+            assert_eq!(db.get_edges().len(), 1);
+        }
+
+        #[test]
+        fn should_handle_thick_edges() {
+            let input = "graph TD;\nA ==> B;";
+            let result = parse(input);
+            assert!(result.is_ok(), "Failed to parse thick edge: {:?}", result);
+            let db = result.unwrap();
+            assert_eq!(db.get_edges().len(), 1);
+        }
+
+        #[test]
+        fn should_handle_dotted_edges() {
+            let input = "graph TD;\nA -.-> B;";
+            let result = parse(input);
+            assert!(result.is_ok(), "Failed to parse dotted edge: {:?}", result);
+            let db = result.unwrap();
+            assert_eq!(db.get_edges().len(), 1);
+        }
+
+        #[test]
+        fn should_handle_double_arrow_point() {
+            let input = "graph TD;\nA <--> B;";
+            let result = parse(input);
+            assert!(result.is_ok(), "Failed to parse double arrow: {:?}", result);
+            let db = result.unwrap();
+            assert_eq!(db.get_edges().len(), 1);
+        }
+
+        #[test]
+        fn should_handle_double_arrow_cross() {
+            let input = "graph TD;\nA x--x B;";
+            let result = parse(input);
+            assert!(result.is_ok(), "Failed to parse double cross: {:?}", result);
+        }
+
+        #[test]
+        fn should_handle_double_arrow_circle() {
+            let input = "graph TD;\nA o--o B;";
+            let result = parse(input);
+            assert!(result.is_ok(), "Failed to parse double circle: {:?}", result);
+        }
+
+        #[test]
+        fn should_handle_thick_double_arrow_point() {
+            let input = "graph TD;\nA <==> B;";
+            let result = parse(input);
+            assert!(result.is_ok(), "Failed to parse thick double arrow: {:?}", result);
+            let db = result.unwrap();
+            assert_eq!(db.get_edges().len(), 1);
+        }
+
+        #[test]
+        fn should_handle_dotted_double_arrow_point() {
+            let input = "graph TD;\nA <-.-> B;";
+            let result = parse(input);
+            assert!(result.is_ok(), "Failed to parse dotted double arrow: {:?}", result);
+            let db = result.unwrap();
+            assert_eq!(db.get_edges().len(), 1);
+        }
+
+        #[test]
+        fn should_handle_edge_with_text_normal() {
+            let input = "graph TD;\nA -- text --> B;";
+            let result = parse(input);
+            assert!(result.is_ok(), "Failed to parse edge with text: {:?}", result);
+            let db = result.unwrap();
+            let edges = db.get_edges();
+            assert_eq!(edges.len(), 1);
+            assert_eq!(edges[0].text, "text");
+        }
+
+        #[test]
+        fn should_handle_edge_with_text_thick() {
+            let input = "graph TD;\nA == text ==> B;";
+            let result = parse(input);
+            assert!(result.is_ok(), "Failed to parse thick edge with text: {:?}", result);
+            let db = result.unwrap();
+            let edges = db.get_edges();
+            assert_eq!(edges.len(), 1);
+            assert_eq!(edges[0].text, "text");
+        }
+
+        #[test]
+        fn should_handle_edge_with_text_dotted() {
+            let input = "graph TD;\nA -. text .-> B;";
+            let result = parse(input);
+            assert!(result.is_ok(), "Failed to parse dotted edge with text: {:?}", result);
+            let db = result.unwrap();
+            let edges = db.get_edges();
+            assert_eq!(edges.len(), 1);
+            assert_eq!(edges[0].text, "text");
+        }
+
+        // Edge type and stroke verification tests
+        #[test]
+        fn should_set_arrow_point_type_for_normal_arrow() {
+            let input = "graph TD;\nA --> B;";
+            let result = parse(input);
+            assert!(result.is_ok());
+            let db = result.unwrap();
+            let edges = db.get_edges();
+            assert_eq!(edges[0].edge_type, Some("arrow_point".to_string()));
+            assert_eq!(edges[0].stroke, EdgeStroke::Normal);
+        }
+
+        #[test]
+        fn should_set_arrow_point_type_for_thick_arrow() {
+            let input = "graph TD;\nA ==> B;";
+            let result = parse(input);
+            assert!(result.is_ok());
+            let db = result.unwrap();
+            let edges = db.get_edges();
+            assert_eq!(edges[0].edge_type, Some("arrow_point".to_string()));
+            assert_eq!(edges[0].stroke, EdgeStroke::Thick);
+        }
+
+        #[test]
+        fn should_set_arrow_point_type_for_dotted_arrow() {
+            let input = "graph TD;\nA -.-> B;";
+            let result = parse(input);
+            assert!(result.is_ok());
+            let db = result.unwrap();
+            let edges = db.get_edges();
+            assert_eq!(edges[0].edge_type, Some("arrow_point".to_string()));
+            assert_eq!(edges[0].stroke, EdgeStroke::Dotted);
+        }
+
+        #[test]
+        fn should_set_double_arrow_point_type() {
+            let input = "graph TD;\nA <--> B;";
+            let result = parse(input);
+            assert!(result.is_ok());
+            let db = result.unwrap();
+            let edges = db.get_edges();
+            assert_eq!(edges[0].edge_type, Some("double_arrow_point".to_string()));
+        }
+
+        #[test]
+        fn should_set_double_arrow_cross_type() {
+            let input = "graph TD;\nA x--x B;";
+            let result = parse(input);
+            assert!(result.is_ok());
+            let db = result.unwrap();
+            let edges = db.get_edges();
+            assert_eq!(edges[0].edge_type, Some("double_arrow_cross".to_string()));
+        }
+
+        #[test]
+        fn should_set_double_arrow_circle_type() {
+            let input = "graph TD;\nA o--o B;";
+            let result = parse(input);
+            assert!(result.is_ok());
+            let db = result.unwrap();
+            let edges = db.get_edges();
+            assert_eq!(edges[0].edge_type, Some("double_arrow_circle".to_string()));
+        }
+
+        #[test]
+        fn should_set_thick_double_arrow_point_type() {
+            let input = "graph TD;\nA <==> B;";
+            let result = parse(input);
+            assert!(result.is_ok());
+            let db = result.unwrap();
+            let edges = db.get_edges();
+            assert_eq!(edges[0].edge_type, Some("double_arrow_point".to_string()));
+            assert_eq!(edges[0].stroke, EdgeStroke::Thick);
+        }
+
+        #[test]
+        fn should_set_dotted_double_arrow_point_type() {
+            let input = "graph TD;\nA <-.-> B;";
+            let result = parse(input);
+            assert!(result.is_ok());
+            let db = result.unwrap();
+            let edges = db.get_edges();
+            assert_eq!(edges[0].edge_type, Some("double_arrow_point".to_string()));
+            assert_eq!(edges[0].stroke, EdgeStroke::Dotted);
+        }
+
+        #[test]
+        fn should_set_edge_length_for_normal_arrows() {
+            // Length 1: -->
+            let input = "graph TD;\nA --> B;";
+            let db = parse(input).unwrap();
+            assert_eq!(db.get_edges()[0].length, Some(1));
+
+            // Length 2: --->
+            let input = "graph TD;\nA ---> B;";
+            let db = parse(input).unwrap();
+            assert_eq!(db.get_edges()[0].length, Some(2));
+
+            // Length 3: ---->
+            let input = "graph TD;\nA ----> B;";
+            let db = parse(input).unwrap();
+            assert_eq!(db.get_edges()[0].length, Some(3));
+        }
+
+        #[test]
+        fn should_set_edge_length_for_thick_arrows() {
+            // Length 1: ==>
+            let input = "graph TD;\nA ==> B;";
+            let db = parse(input).unwrap();
+            assert_eq!(db.get_edges()[0].length, Some(1));
+
+            // Length 2: ===>
+            let input = "graph TD;\nA ===> B;";
+            let db = parse(input).unwrap();
+            assert_eq!(db.get_edges()[0].length, Some(2));
+
+            // Length 3: ====>
+            let input = "graph TD;\nA ====> B;";
+            let db = parse(input).unwrap();
+            assert_eq!(db.get_edges()[0].length, Some(3));
+        }
+
+        #[test]
+        fn should_preserve_edge_text_with_type_and_stroke() {
+            let input = "graph TD;\nA -- Label --> B;";
+            let result = parse(input);
+            assert!(result.is_ok());
+            let db = result.unwrap();
+            let edges = db.get_edges();
+            assert_eq!(edges[0].text, "Label");
+            assert_eq!(edges[0].edge_type, Some("arrow_point".to_string()));
+            assert_eq!(edges[0].stroke, EdgeStroke::Normal);
+        }
+    }
+
+    // Tests for various shape types
+    mod shape_tests {
+        use super::*;
+
+        #[test]
+        fn should_parse_all_shape_types() {
+            let inputs = vec![
+                ("flowchart LR\nA[Square]", FlowVertexType::Square),
+                ("flowchart LR\nA(Round)", FlowVertexType::Round),
+                ("flowchart LR\nA((Circle))", FlowVertexType::Circle),
+                ("flowchart LR\nA{Diamond}", FlowVertexType::Diamond),
+                ("flowchart LR\nA[(Cylinder)]", FlowVertexType::Cylinder),
+                ("flowchart LR\nA([Stadium])", FlowVertexType::Stadium),
+                ("flowchart LR\nA{{Hexagon}}", FlowVertexType::Hexagon),
+                ("flowchart LR\nA[[Subroutine]]", FlowVertexType::Subroutine),
+                ("flowchart LR\nA(((DoubleCircle)))", FlowVertexType::DoubleCircle),
+            ];
+
+            for (input, expected_type) in inputs {
+                let result = parse(input);
+                assert!(result.is_ok(), "Failed to parse shape: {:?} for input: {}", result, input);
+                let db = result.unwrap();
+                let vertex = db.get_vertices().get("A").unwrap();
+                assert_eq!(vertex.vertex_type, Some(expected_type), "Wrong shape type for input: {}", input);
+            }
+        }
+
+        #[test]
+        #[ignore = "TODO: Fix trapezoid shape parsing"]
+        fn should_parse_trapezoid() {
+            let input = "flowchart LR\nA[/Trapezoid/]";
+            let result = parse(input);
+            assert!(result.is_ok(), "Failed to parse trapezoid: {:?}", result);
+            let db = result.unwrap();
+            let vertex = db.get_vertices().get("A").unwrap();
+            assert_eq!(vertex.vertex_type, Some(FlowVertexType::Trapezoid));
+        }
+
+        #[test]
+        #[ignore = "TODO: Fix inv trapezoid shape parsing"]
+        fn should_parse_inv_trapezoid() {
+            let input = r#"flowchart LR
+A[\InvTrapezoid\]"#;
+            let result = parse(input);
+            assert!(result.is_ok(), "Failed to parse inv trapezoid: {:?}", result);
+            let db = result.unwrap();
+            let vertex = db.get_vertices().get("A").unwrap();
+            assert_eq!(vertex.vertex_type, Some(FlowVertexType::InvTrapezoid));
+        }
+
+        #[test]
+        #[ignore = "TODO: Fix lean right shape parsing"]
+        fn should_parse_lean_right() {
+            let input = r#"flowchart LR
+A[/LeanRight\]"#;
+            let result = parse(input);
+            assert!(result.is_ok(), "Failed to parse: {:?}", result);
+            let db = result.unwrap();
+            let vertex = db.get_vertices().get("A").unwrap();
+            assert_eq!(vertex.vertex_type, Some(FlowVertexType::LeanRight));
+        }
+
+        #[test]
+        #[ignore = "TODO: Fix lean left shape parsing"]
+        fn should_parse_lean_left() {
+            let input = r#"flowchart LR
+A[\LeanLeft/]"#;
+            let result = parse(input);
+            assert!(result.is_ok(), "Failed to parse: {:?}", result);
+            let db = result.unwrap();
+            let vertex = db.get_vertices().get("A").unwrap();
+            assert_eq!(vertex.vertex_type, Some(FlowVertexType::LeanLeft));
+        }
+    }
+
+    // Tests for prototype pollution protection
+    mod security_tests {
+        use super::*;
+
+        #[test]
+        fn should_work_with_proto_node_id() {
+            let input = "graph LR\n__proto__ --> A;";
+            let result = parse(input);
+            assert!(result.is_ok(), "Should handle __proto__ node: {:?}", result);
+        }
+
+        #[test]
+        fn should_work_with_constructor_node_id() {
+            let input = "graph LR\nconstructor --> A;";
+            let result = parse(input);
+            assert!(result.is_ok(), "Should handle constructor node: {:?}", result);
+        }
+
+        #[test]
+        fn should_work_with_proto_subgraph_id() {
+            let input = "graph LR\n__proto__ --> A;\nsubgraph __proto__\n    C --> D;\nend;";
+            let result = parse(input);
+            assert!(result.is_ok(), "Should handle __proto__ subgraph: {:?}", result);
+        }
+    }
 }

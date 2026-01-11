@@ -86,6 +86,10 @@ pub struct State {
     pub text_styles: Vec<String>,
     /// Nested states for composite states
     pub doc: Vec<Statement>,
+    /// Alias for display
+    pub alias: Option<String>,
+    /// Parent state ID for nested states
+    pub parent: Option<String>,
 }
 
 impl State {
@@ -100,6 +104,8 @@ impl State {
             styles: Vec::new(),
             text_styles: Vec::new(),
             doc: Vec::new(),
+            alias: None,
+            parent: None,
         }
     }
 
@@ -208,6 +214,8 @@ pub struct StateDb {
     pub acc_descr: String,
     /// Diagram title
     pub diagram_title: String,
+    /// Hide empty descriptions flag
+    pub hide_empty_descriptions: bool,
 }
 
 impl Default for StateDb {
@@ -228,6 +236,7 @@ impl StateDb {
             acc_title: String::new(),
             acc_descr: String::new(),
             diagram_title: String::new(),
+            hide_empty_descriptions: false,
         }
     }
 
@@ -241,6 +250,30 @@ impl StateDb {
         self.acc_title.clear();
         self.acc_descr.clear();
         self.diagram_title.clear();
+        self.hide_empty_descriptions = false;
+    }
+
+    /// Set hide empty descriptions flag
+    pub fn set_hide_empty_descriptions(&mut self, value: bool) {
+        self.hide_empty_descriptions = value;
+    }
+
+    /// Set the accessibility title
+    pub fn set_acc_title(&mut self, title: &str) {
+        self.acc_title = title.to_string();
+    }
+
+    /// Set the accessibility description
+    pub fn set_acc_description(&mut self, desc: &str) {
+        self.acc_descr = desc.to_string();
+    }
+
+    /// Set the parent of a state
+    pub fn set_parent(&mut self, state_id: &str, parent_id: &str) {
+        self.add_state(state_id);
+        if let Some(state) = self.states.get_mut(state_id) {
+            state.parent = Some(parent_id.to_string());
+        }
     }
 
     /// Add a state to the diagram

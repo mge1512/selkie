@@ -4,8 +4,10 @@
 //! with messages, notes, and control structures (loops, alternatives, etc.)
 
 mod types;
+pub mod parser;
 
 pub use types::*;
+pub use parser::parse;
 
 #[cfg(test)]
 mod tests {

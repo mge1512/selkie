@@ -1,14 +1,28 @@
 //! Diagram types and parsing
 
+pub mod architecture;
+pub mod block;
+pub mod c4;
 pub mod class;
 pub mod er;
 pub mod flowchart;
+pub mod gantt;
 pub mod git;
 pub mod info;
+pub mod journey;
+pub mod kanban;
 pub mod mindmap;
+pub mod packet;
 pub mod pie;
+pub mod quadrant;
+pub mod radar;
+pub mod requirement;
+pub mod sankey;
 pub mod sequence;
 pub mod state;
+pub mod timeline;
+pub mod treemap;
+pub mod xychart;
 
 mod detect;
 

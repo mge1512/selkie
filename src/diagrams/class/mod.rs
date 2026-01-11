@@ -4,8 +4,10 @@
 //! methods, and relationships between them.
 
 mod types;
+pub mod parser;
 
 pub use types::*;
+pub use parser::parse;
 
 #[cfg(test)]
 mod tests {

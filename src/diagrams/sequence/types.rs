@@ -281,6 +281,8 @@ pub struct SequenceDb {
     pub acc_descr: String,
     /// Diagram title
     pub diagram_title: String,
+    /// Current open box index (for tracking actors added within a box)
+    current_box_index: Option<usize>,
 }
 
 impl Default for SequenceDb {
@@ -306,6 +308,7 @@ impl SequenceDb {
             acc_title: String::new(),
             acc_descr: String::new(),
             diagram_title: String::new(),
+            current_box_index: None,
         }
     }
 
@@ -324,6 +327,7 @@ impl SequenceDb {
         self.acc_title.clear();
         self.acc_descr.clear();
         self.diagram_title.clear();
+        self.current_box_index = None;
     }
 
     /// Add an actor to the diagram
@@ -347,6 +351,13 @@ impl SequenceDb {
 
         self.actor_order.push(name.to_string());
         self.actors.insert(name.to_string(), actor);
+
+        // Add to current box if one is open
+        if let Some(box_idx) = self.current_box_index {
+            if let Some(current_box) = self.boxes.get_mut(box_idx) {
+                current_box.actor_keys.push(name.to_string());
+            }
+        }
     }
 
     /// Get all actors
@@ -437,11 +448,17 @@ impl SequenceDb {
         self.wrap_enabled = wrap;
     }
 
-    /// Add a box
+    /// Add a box (starts collecting actors for this box)
     pub fn add_box(&mut self, name: &str, color: &str) {
         let mut box_item = Box::new(name.to_string());
         box_item.fill = color.to_string();
         self.boxes.push(box_item);
+        self.current_box_index = Some(self.boxes.len() - 1);
+    }
+
+    /// End the current box (stop collecting actors)
+    pub fn end_box(&mut self) {
+        self.current_box_index = None;
     }
 
     /// Get all boxes

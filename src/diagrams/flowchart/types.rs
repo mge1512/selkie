@@ -291,6 +291,77 @@ impl Default for FlowchartDb {
     }
 }
 
+/// Parse an arrow string to extract edge type, stroke style, and length.
+/// Returns (edge_type, stroke, length).
+///
+/// Arrow formats:
+/// - Normal: `-->`, `---`, `-->`
+/// - Thick: `==>`, `===`, `==>`
+/// - Dotted: `-.->`, `-.-`, `-..->`
+/// - With starts: `<-->`, `x--x`, `o--o`
+fn parse_arrow(arrow: &str) -> (String, EdgeStroke, u32) {
+    let arrow = arrow.trim();
+
+    // Determine stroke type based on characters
+    let stroke = if arrow.contains("-.") || arrow.contains(".-") {
+        EdgeStroke::Dotted
+    } else if arrow.contains('=') {
+        EdgeStroke::Thick
+    } else if arrow.starts_with('~') {
+        EdgeStroke::Invisible
+    } else {
+        EdgeStroke::Normal
+    };
+
+    // Determine edge type based on start/end markers
+    let has_start_arrow = arrow.starts_with('<') || arrow.starts_with("x-") || arrow.starts_with("o-")
+        || arrow.starts_with("x=") || arrow.starts_with("o=")
+        || arrow.starts_with("<-") || arrow.starts_with("<=");
+    let has_end_arrow = arrow.ends_with('>');
+    let has_end_cross = arrow.ends_with('x') && !arrow.starts_with('x');
+    let has_end_circle = arrow.ends_with('o') && !arrow.starts_with('o');
+    let has_start_cross = arrow.starts_with("x-") || arrow.starts_with("x=");
+    let has_start_circle = arrow.starts_with("o-") || arrow.starts_with("o=");
+    let has_end_cross_double = arrow.ends_with('x') && has_start_cross;
+    let has_end_circle_double = arrow.ends_with('o') && has_start_circle;
+
+    let edge_type = if has_start_arrow && has_end_arrow {
+        "double_arrow_point".to_string()
+    } else if has_end_cross_double || (has_start_cross && arrow.ends_with('x')) {
+        "double_arrow_cross".to_string()
+    } else if has_end_circle_double || (has_start_circle && arrow.ends_with('o')) {
+        "double_arrow_circle".to_string()
+    } else if has_end_arrow {
+        "arrow_point".to_string()
+    } else if has_end_cross {
+        "arrow_cross".to_string()
+    } else if has_end_circle {
+        "arrow_circle".to_string()
+    } else {
+        "arrow_open".to_string()
+    };
+
+    // Calculate length based on repeated characters
+    let length = match stroke {
+        EdgeStroke::Normal | EdgeStroke::Invisible => {
+            // Count consecutive dashes or tildes
+            let dash_count = arrow.chars().filter(|&c| c == '-' || c == '~').count();
+            // Minimum length is 1, max is 3 for display purposes
+            (dash_count.saturating_sub(1).max(1).min(3)) as u32
+        }
+        EdgeStroke::Thick => {
+            let eq_count = arrow.chars().filter(|&c| c == '=').count();
+            (eq_count.saturating_sub(1).max(1).min(3)) as u32
+        }
+        EdgeStroke::Dotted => {
+            let dot_count = arrow.chars().filter(|&c| c == '.').count();
+            (dot_count.max(1).min(3)) as u32
+        }
+    };
+
+    (edge_type, stroke, length)
+}
+
 impl FlowchartDb {
     const DOM_ID_PREFIX: &'static str = "flowchart-";
 
@@ -590,7 +661,7 @@ impl FlowchartDb {
     }
 
     /// Add an edge between two nodes (simplified for parser)
-    pub fn add_edge(&mut self, start: &str, end: &str, _arrow: &str, text: Option<&str>, link_id: Option<&str>) {
+    pub fn add_edge(&mut self, start: &str, end: &str, arrow: &str, text: Option<&str>, link_id: Option<&str>) {
         // Ensure vertices exist
         if !self.vertices.contains_key(start) {
             self.add_vertex_simple(start, None, None);
@@ -599,10 +670,15 @@ impl FlowchartDb {
             self.add_vertex_simple(end, None, None);
         }
 
+        // Parse arrow string to extract edge type, stroke, and length
+        let (edge_type, stroke, length) = parse_arrow(arrow);
+
         let flow_link = FlowLink {
             text: text.map(|t| FlowText::new(t)),
             id: link_id.map(String::from),
-            ..Default::default()
+            link_type: Some(edge_type),
+            stroke,
+            length: Some(length),
         };
 
         self.add_single_link(start, end, Some(&flow_link), link_id);

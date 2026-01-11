@@ -4,8 +4,10 @@
 //! notes, and nested composite states.
 
 mod types;
+pub mod parser;
 
 pub use types::*;
+pub use parser::parse;
 
 #[cfg(test)]
 mod tests {

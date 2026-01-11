@@ -39,9 +39,26 @@ ammonia = "4"
 # Logging
 log = "0.4"
 
+# File globbing (for CLI tools)
+glob = "0.3"
+
 [dev-dependencies]
 # Testing
 pretty_assertions = "1.4"
 
+[[bin]]
+name = "extract-diagrams"
+path = "src/bin/extract_diagrams.rs"
+
+[[bin]]
+name = "cross-validate"
+path = "src/bin/cross_validate.rs"
+
 [features]
 default = []
+cli = ["clap"]
+
+[dependencies.clap]
+version = "4.4"
+features = ["derive"]
+optional = true

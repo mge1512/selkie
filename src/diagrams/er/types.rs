@@ -312,10 +312,7 @@ impl ErDb {
     pub fn add_attributes(&mut self, entity_name: &str, attributes: Vec<Attribute>) {
         self.add_entity(entity_name, None);
         if let Some(entity) = self.entities.get_mut(entity_name) {
-            // Process in reverse order (to match JS behavior with recursive construction)
-            for attr in attributes.into_iter().rev() {
-                entity.attributes.push(attr);
-            }
+            entity.attributes.extend(attributes);
         }
     }
 
