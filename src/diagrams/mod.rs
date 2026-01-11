@@ -7,6 +7,7 @@ pub mod info;
 pub mod mindmap;
 pub mod pie;
 pub mod sequence;
+pub mod state;
 
 mod detect;
 
