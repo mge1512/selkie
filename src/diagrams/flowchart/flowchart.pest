@@ -19,7 +19,8 @@ document = { (NEWLINE | statement)* }
 // ==================
 
 statement = {
-    acc_title_stmt
+    comment_stmt
+    | acc_title_stmt
     | acc_descr_stmt
     | class_def_stmt
     | class_stmt
@@ -30,6 +31,9 @@ statement = {
     | direction_stmt
     | vertex_statement
 }
+
+// Comments
+comment_stmt = { "%%" ~ (!NEWLINE ~ ANY)* }
 
 // ==================
 // Graph keywords
@@ -292,7 +296,7 @@ reserved_keyword = {
 }
 
 // identifier cannot contain ::: (class separator)
-// First char, then more chars but stop before :::
+// First char, then more chars but stop before ::: and arrow patterns
 identifier = @{
     !reserved_keyword ~ id_start ~ (!":::" ~ id_char)*
 }
@@ -301,9 +305,14 @@ id_start = _{
     LETTER | DIGIT | "_" | "#" | "*" | "!" | "?" | UNICODE_LETTER
 }
 
+// Hyphen is allowed but not when followed by arrow continuations (-, >, .)
 id_char = _{
-    LETTER | DIGIT | "_" | "-" | "." | ":" | "#" | "*" | "!" | "?" | UNICODE_LETTER
+    LETTER | DIGIT | "_" | "." | ":" | "#" | "*" | "!" | "?" | UNICODE_LETTER
+    | id_hyphen
 }
+
+// A hyphen that is NOT followed by arrow characters (-, >, .)
+id_hyphen = _{ "-" ~ !("-" | ">" | ".") }
 
 identifier_list = {
     identifier ~ ("," ~ identifier)*
