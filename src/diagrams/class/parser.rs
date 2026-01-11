@@ -1781,6 +1781,29 @@ actual : #protectedMethod()",
         }
     }
 
+    mod backtick_tests {
+        use super::*;
+
+        #[test]
+        fn should_handle_newline_in_backticked_class_name() {
+            // Mermaid allows newlines inside backticked class names
+            let result = parse(
+                "classDiagram
+  Animal <|-- `Du
+ck`
+  class `Du
+ck` {
+    +swim()
+  }",
+            );
+            assert!(result.is_ok(), "Parse failed: {:?}", result);
+            let db = result.unwrap();
+            // The class name contains an actual newline
+            let class = db.get_class("Du\nck");
+            assert!(class.is_some(), "Class 'Du\\nck' not found");
+        }
+    }
+
     mod callback_tests {
         use super::*;
 

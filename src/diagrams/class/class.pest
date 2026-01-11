@@ -86,6 +86,10 @@ namespace_stmt = {
 }
 
 namespace_name = @{
+    backticked_name | simple_namespace_name
+}
+
+simple_namespace_name = @{
     (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_" | "-" | ".")*
 }
 
@@ -188,7 +192,9 @@ cardinality_right = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
 
 // Relationship types - IMPORTANT: longer patterns must come first!
 rel_type = @{
-    // Bidirectional first (longest)
+    // Bidirectional inheritance (longest)
+    "<|--|>" | "<|..|>" |
+    // Bidirectional (other)
     "*--*" | "<-->" |
     // Extension (inheritance)
     "<|--" | "--|>" | "<|.." | "..|>" |
@@ -286,5 +292,8 @@ style_list = @{
 // Primitives
 // ==================
 
-WHITESPACE = _{ " " | "\t" }
+// Line continuation: backslash followed by newline is treated as whitespace
+LINE_CONTINUATION = _{ "\\" ~ ("\r\n" | "\n") }
+
+WHITESPACE = _{ " " | "\t" | LINE_CONTINUATION }
 NEWLINE = _{ "\r\n" | "\n" | ";" }

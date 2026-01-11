@@ -616,6 +616,33 @@ mod tests {
         }
 
         #[test]
+        fn should_handle_numeric_participant_name() {
+            // Test numeric participant name
+            let result = parse("sequenceDiagram\nparticipant 1");
+            assert!(result.is_ok(), "Failed to parse numeric participant: {:?}", result.err());
+        }
+
+        #[test]
+        fn should_handle_numeric_participant_with_alias() {
+            // Test numeric participant name with alias
+            let result = parse("sequenceDiagram\nparticipant 1 as One");
+            assert!(result.is_ok(), "Failed to parse: {:?}", result.err());
+            let db = result.unwrap();
+            let actor = db.get_actors().get("1").unwrap();
+            assert_eq!(actor.description, "One");
+        }
+
+        #[test]
+        fn should_handle_participant_with_html_entities() {
+            // Test participant with HTML entity encoding (#lt; and #gt;)
+            let result = parse("sequenceDiagram\nparticipant 1 as multiline<br>using #lt;br#gt;");
+            assert!(result.is_ok(), "Failed to parse: {:?}", result.err());
+            let db = result.unwrap();
+            let actor = db.get_actors().get("1").unwrap();
+            assert_eq!(actor.description, "multiline<br>using #lt;br#gt;");
+        }
+
+        #[test]
         fn should_parse_all_participant_types() {
             let result = parse(
                 "sequenceDiagram
@@ -735,6 +762,60 @@ User->>AuthService: Login"#,
                 db.get_messages()[0].message_type,
                 LineType::BidirectionalDotted
             );
+        }
+
+        #[test]
+        fn should_handle_half_arrow_solid_bottom() {
+            // Half arrow: -|/ (solid half arrow bottom)
+            let result = parse("sequenceDiagram\nAlice-|/Bob:Hello");
+            assert!(result.is_ok(), "Failed to parse: {:?}", result.err());
+        }
+
+        #[test]
+        fn should_handle_half_arrow_solid_top() {
+            // Half arrow: -|\ (solid half arrow top)
+            let result = parse(r"sequenceDiagram
+Alice-|\Bob:Hello");
+            assert!(result.is_ok(), "Failed to parse: {:?}", result.err());
+        }
+
+        #[test]
+        fn should_handle_half_arrow_stick_bottom() {
+            // Half arrow: -// (stick half arrow bottom)
+            let result = parse("sequenceDiagram\nAlice-//Bob:Hello");
+            assert!(result.is_ok(), "Failed to parse: {:?}", result.err());
+        }
+
+        #[test]
+        fn should_handle_half_arrow_stick_top() {
+            // Half arrow: -\\ (stick half arrow top - double backslash)
+            let result = parse(r"sequenceDiagram
+Alice-\\Bob:Hello");
+            assert!(result.is_ok(), "Failed to parse: {:?}", result.err());
+        }
+
+        #[test]
+        fn should_handle_half_arrow_with_spaces() {
+            // Half arrow with spaces around it - like in mermaid tests
+            let result = parse(r"sequenceDiagram
+      Alice -|\  John: Hello John, how are you?");
+            assert!(result.is_ok(), "Failed to parse: {:?}", result.err());
+        }
+
+        #[test]
+        fn should_handle_half_arrow_reverse() {
+            // Half arrow reverse: \|- (solid half arrow bottom reverse)
+            let result = parse(r"sequenceDiagram
+Alice\|-Bob:Hello");
+            assert!(result.is_ok(), "Failed to parse: {:?}", result.err());
+        }
+
+        #[test]
+        fn should_handle_half_arrow_reverse_with_spaces() {
+            // Half arrow reverse with spaces
+            let result = parse(r"sequenceDiagram
+        Alice \|- John: Hello");
+            assert!(result.is_ok(), "Failed to parse: {:?}", result.err());
         }
     }
 
@@ -1081,10 +1162,22 @@ destroy Alice",
 
         #[test]
         fn should_handle_semicolons() {
-            let result = parse("sequenceDiagram;Alice->Bob: Hello;Bob-->Alice: Hi");
+            // Note: We no longer treat ; as a statement separator in message text
+            // to allow entities like #lt; and #gt;. Use newlines to separate statements.
+            let result = parse("sequenceDiagram\nAlice->Bob: Hello\nBob-->Alice: Hi");
             assert!(result.is_ok());
             let db = result.unwrap();
             assert_eq!(db.get_messages().len(), 2);
+        }
+
+        #[test]
+        fn should_allow_semicolons_in_message_text() {
+            // Semicolons in message text are allowed (for entities like #lt;)
+            let result = parse("sequenceDiagram\nAlice->Bob: Hello #lt;World#gt;");
+            assert!(result.is_ok());
+            let db = result.unwrap();
+            assert_eq!(db.get_messages().len(), 1);
+            assert_eq!(db.get_messages()[0].message, "Hello #lt;World#gt;");
         }
     }
 }

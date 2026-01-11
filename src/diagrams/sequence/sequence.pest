@@ -124,10 +124,11 @@ actor_name = @{
 dash_in_name = @{ "-" ~ &safe_after_dash }
 safe_after_dash = _{ !((">" | "x" | ")" | "-") ~ ANY) ~ ASCII_ALPHA }
 
-alias_def = { "as" ~ actor_description }
+alias_def = { ^"as" ~ actor_description }
 
+// Actor description consumes until actual newline (not semicolon, to allow entities like #lt;)
 actor_description = @{
-    (!(NEWLINE | ";") ~ ANY)+
+    (!("\r\n" | "\n") ~ ANY)+
 }
 
 // ==================
@@ -303,8 +304,9 @@ actor_list = { actor_name ~ ("," ~ actor_name)* }
 
 note_separator = _{ ":" }
 
+// Note text consumes until actual newline (not semicolon, to allow entities like #lt;)
 note_text = @{
-    (!(NEWLINE | ";") ~ ANY)+
+    (!("\r\n" | "\n") ~ ANY)+
 }
 
 // ==================
@@ -330,6 +332,7 @@ arrow_type = @{
     "()-x()-" | "()-x()+" | "()--x()-" | "()--x()+" |
     "()-->>()" | "()-x()" | "()--x()" |
     "()->>()" |  // Central connection solid open arrow
+    "()->()" |   // Central connection solid arrow (no >>)
     // Central connection to regular actor (no trailing ())
     "()-->>-" | "()-->>+" | "()-->>"|
     "()->>-" | "->>()+" | "()->>" |
@@ -347,6 +350,16 @@ arrow_type = @{
     "->>()-" | "->>()+" | "-->>()-" | "-->>()+" |
     "-x()-" | "-x()+" | "--x()-" | "--x()+" |
     "->>(" | "-->>(" | "-)(" | "--)(" |
+    // Half arrows - solid (with |) - dotted reverse first (longer)
+    "/|--" | "\\|--" |        // Solid half arrow reverse dotted
+    "--|/" | "--|\\" |        // Solid half arrow dotted
+    "/|-" | "\\|-" |          // Solid half arrow reverse
+    "-|/" | "-|\\" |          // Solid half arrow
+    // Half arrows - stick (no |) - dotted reverse first (longer)
+    "//--" | "\\\\--" |       // Stick half arrow reverse dotted
+    "--//" | "--\\\\" |       // Stick half arrow dotted
+    "//-" | "\\\\-" |         // Stick half arrow reverse
+    "-//" | "-\\\\" |         // Stick half arrow
     // Standard arrows - longer first
     "->>-" | "->>+" | "-->>-" | "-->>+" |
     "->-" | "->+" | "-->-" | "-->+" |
@@ -361,8 +374,9 @@ arrow_type = @{
 
 message_separator = _{ ":" }
 
+// Message text consumes until actual newline (not semicolon, to allow entities like #lt;)
 message_text = @{
-    (!(NEWLINE | ";") ~ ANY)*
+    (!("\r\n" | "\n") ~ ANY)*
 }
 
 // ==================
