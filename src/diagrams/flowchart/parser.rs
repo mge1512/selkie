@@ -636,7 +636,70 @@ mod tests {
         assert_eq!(edges[0].text, "label");
     }
 
-    // Temporarily disabled subgraph and classDef tests - pest grammar needs more work
-    // The issue is with keyword conflict resolution in PEG
-    // TODO: Fix subgraph and classDef parsing in pest grammar
+    #[test]
+    fn test_parse_style_stmt() {
+        // Style statements need the vertex to exist first
+        let input = "flowchart LR\nA[Start]\nstyle A fill:#f9f";
+        let result = parse(input);
+        assert!(result.is_ok(), "Failed to parse: {:?}", result);
+        let db = result.unwrap();
+        let vertex = db.get_vertices().get("A").unwrap();
+        assert!(vertex.styles.len() > 0, "Vertex A should have styles: {:?}", vertex);
+    }
+
+    #[test]
+    fn test_parse_class_def() {
+        let input = "flowchart LR\nclassDef myClass fill:#f9f";
+        let result = parse(input);
+        println!("Result: {:?}", result);
+        assert!(result.is_ok(), "Failed to parse: {:?}", result);
+        let db = result.unwrap();
+        assert!(db.get_classes().contains_key("myClass"),
+            "myClass should be defined as a class, got classes: {:?}, vertices: {:?}",
+            db.get_classes(), db.get_vertices());
+    }
+
+    #[test]
+    fn test_parse_subgraph() {
+        // First, test if the subgraph_stmt rule works directly
+        let input = "subgraph sub1\nA\nend";
+        let result = FlowchartParser::parse(Rule::subgraph_stmt, input);
+        println!("Direct subgraph_stmt result: {:?}", result);
+
+        // Then test the full diagram
+        let input = r#"flowchart LR
+subgraph sub1[Title]
+    A --> B
+end"#;
+        let result = parse(input);
+        println!("Full diagram result: {:?}", result);
+        assert!(result.is_ok(), "Failed to parse: {:?}", result);
+        let db = result.unwrap();
+        assert!(!db.subgraphs().is_empty(), "Should have subgraphs, got db: {:?}", db);
+    }
+
+    #[test]
+    fn test_parse_direction_stmt() {
+        let input = "flowchart LR\ndirection TB";
+        let result = parse(input);
+        assert!(result.is_ok(), "Failed to parse: {:?}", result);
+        let db = result.unwrap();
+        assert_eq!(db.get_direction(), "TB", "Direction should be changed to TB");
+    }
+
+    #[test]
+    fn test_parse_click_stmt() {
+        let input = r#"flowchart LR
+A[Node]
+click A myCallback"#;
+        let result = parse(input);
+        assert!(result.is_ok(), "Failed to parse: {:?}", result);
+    }
+
+    #[test]
+    fn test_parse_link_style() {
+        let input = "flowchart LR\nA --> B\nlinkStyle 0 stroke:#ff0";
+        let result = parse(input);
+        assert!(result.is_ok(), "Failed to parse: {:?}", result);
+    }
 }

@@ -1,14 +1,15 @@
 // Flowchart grammar for mermaid diagrams
 // Based on mermaid.js flow.jison
+// Uses implicit whitespace handling - WHITESPACE is automatically inserted between sequence elements
 
 // ==================
 // Top-level structure
 // ==================
 
-diagram = { SOI ~ WHITESPACE* ~ graph_config ~ document ~ EOI }
+diagram = { SOI ~ graph_config ~ document ~ EOI }
 
 graph_config = {
-    keyword_graph ~ WHITESPACE* ~ direction?
+    keyword_graph ~ direction?
 }
 
 document = { (NEWLINE | statement)* }
@@ -45,7 +46,7 @@ keyword_end = _{ "end" }
 direction = { "LR" | "RL" | "TB" | "TD" | "BT" | "BR" | "<" | ">" | "^" | "v" }
 
 direction_stmt = {
-    "direction" ~ WHITESPACE+ ~ direction
+    "direction" ~ direction
 }
 
 // ==================
@@ -61,11 +62,15 @@ node = {
 }
 
 node_group = {
-    styled_vertex ~ (WHITESPACE* ~ "&" ~ WHITESPACE* ~ styled_vertex)+
+    styled_vertex ~ ("&" ~ styled_vertex)+
 }
 
 styled_vertex = {
-    vertex ~ (WHITESPACE* ~ ":::" ~ WHITESPACE* ~ identifier)?
+    vertex ~ (":::" ~ class_name)?
+}
+
+class_name = @{
+    (ASCII_ALPHA | ASCII_DIGIT | "_" | "-")+
 }
 
 vertex = {
@@ -129,7 +134,7 @@ link_with_text = {
 
 link_id = { (LETTER | DIGIT | "_")+ ~ "@" }
 
-// Solid lines
+// Solid lines - atomic to prevent whitespace insertion
 link_arrow = @{
     arrow_start? ~ "-"+ ~ arrow_end?      // --- or x--- or ---x or x---x
     | arrow_start? ~ "="+ ~ arrow_end?    // === thick
@@ -173,7 +178,7 @@ plain_text = @{
 // ==================
 
 acc_title_stmt = {
-    "accTitle" ~ WHITESPACE* ~ ":" ~ WHITESPACE* ~ line_content
+    "accTitle" ~ ":" ~ line_content
 }
 
 acc_descr_stmt = {
@@ -181,11 +186,11 @@ acc_descr_stmt = {
 }
 
 acc_descr_single = {
-    "accDescr" ~ WHITESPACE* ~ ":" ~ WHITESPACE* ~ line_content
+    "accDescr" ~ ":" ~ line_content
 }
 
 acc_descr_multi = {
-    "accDescr" ~ WHITESPACE* ~ "{" ~ multiline_content ~ "}"
+    "accDescr" ~ "{" ~ multiline_content ~ "}"
 }
 
 line_content = @{ (!NEWLINE ~ ANY)* }
@@ -196,7 +201,7 @@ multiline_content = @{ (!"}" ~ ANY)* }
 // ==================
 
 class_def_stmt = {
-    ^"classDef" ~ WHITESPACE+ ~ class_id ~ WHITESPACE+ ~ styles
+    ^"classDef" ~ class_id ~ styles
 }
 
 class_id = @{
@@ -204,15 +209,15 @@ class_id = @{
 }
 
 class_stmt = {
-    "class" ~ WHITESPACE+ ~ identifier_list ~ WHITESPACE+ ~ identifier
+    "class" ~ identifier_list ~ class_name
 }
 
 style_stmt = {
-    "style" ~ WHITESPACE+ ~ identifier ~ WHITESPACE+ ~ styles
+    "style" ~ identifier ~ styles
 }
 
 link_style_stmt = {
-    "linkStyle" ~ WHITESPACE+ ~ (num_list | "default") ~ WHITESPACE+ ~ ("interpolate" ~ WHITESPACE+ ~ identifier ~ WHITESPACE+)? ~ styles
+    "linkStyle" ~ (num_list | "default") ~ ("interpolate" ~ identifier)? ~ styles
 }
 
 styles = @{
@@ -228,7 +233,7 @@ num_list = {
 // ==================
 
 click_stmt = {
-    "click" ~ WHITESPACE+ ~ identifier ~ WHITESPACE+ ~ click_action
+    "click" ~ identifier ~ click_action
 }
 
 click_action = {
@@ -236,11 +241,11 @@ click_action = {
 }
 
 callback_action = {
-    "call" ~ WHITESPACE+ ~ identifier ~ "(" ~ callback_args? ~ ")" ~ tooltip?
+    "call" ~ identifier ~ "(" ~ callback_args? ~ ")" ~ tooltip?
 }
 
 href_action = {
-    "href" ~ WHITESPACE+ ~ quoted_string ~ link_target? ~ tooltip?
+    "href" ~ quoted_string ~ link_target? ~ tooltip?
 }
 
 simple_callback = {
@@ -253,11 +258,11 @@ callback_args = @{
 }
 
 link_target = {
-    WHITESPACE+ ~ ("_self" | "_blank" | "_parent" | "_top")
+    "_self" | "_blank" | "_parent" | "_top"
 }
 
 tooltip = {
-    WHITESPACE+ ~ quoted_string
+    quoted_string
 }
 
 // ==================
@@ -265,7 +270,7 @@ tooltip = {
 // ==================
 
 subgraph_stmt = {
-    keyword_subgraph ~ WHITESPACE+ ~ subgraph_id ~ WHITESPACE* ~ (NEWLINE | ";") ~ document ~ keyword_end
+    keyword_subgraph ~ subgraph_id ~ (NEWLINE | ";") ~ document ~ keyword_end
 }
 
 subgraph_id = {
@@ -277,8 +282,13 @@ subgraph_id = {
 // Identifiers
 // ==================
 
+// Reserved keywords that should not match as identifiers
+reserved_keyword = {
+    "end" | "subgraph" | "classDef" | "class" | "style" | "linkStyle" | "click" | "direction" | "accTitle" | "accDescr"
+}
+
 identifier = @{
-    (LETTER | DIGIT | "_" | "-" | "." | ":" | "#" | "*" | "!" | "?" | UNICODE_LETTER)+
+    !reserved_keyword ~ (LETTER | DIGIT | "_" | "-" | "." | ":" | "#" | "*" | "!" | "?" | UNICODE_LETTER)+
 }
 
 identifier_list = {
@@ -289,6 +299,7 @@ identifier_list = {
 // Primitives
 // ==================
 
+// WHITESPACE is automatically inserted between sequence elements in non-atomic rules
 WHITESPACE = _{ " " | "\t" }
 NEWLINE = _{ "\r\n" | "\n" | ";" }
 NUMBER = @{ ASCII_DIGIT+ }
