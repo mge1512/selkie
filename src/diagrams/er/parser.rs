@@ -954,6 +954,48 @@ mod tests {
         assert!(db.get_entity("PERSON").unwrap().css_classes.contains("myClass"));
     }
 
+    // Cypress test diagrams
+    #[test]
+    fn test_cypress_er_basic() {
+        let input = r#"erDiagram
+          CUSTOMER ||--o{ ORDER : places
+          ORDER ||--|{ LINE-ITEM : contains"#;
+        let result = parse(input);
+        assert!(result.is_ok(), "Failed: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_cypress_er_self_reference() {
+        let input = r#"erDiagram
+          CUSTOMER ||..o{ CUSTOMER : refers
+          CUSTOMER ||--o{ ORDER : places
+          ORDER ||--|{ LINE-ITEM : contains"#;
+        let result = parse(input);
+        assert!(result.is_ok(), "Failed: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_cypress_er_with_attributes() {
+        let input = r#"erDiagram
+          BOOK { string title }
+          AUTHOR }|..|{ BOOK : writes
+          BOOK { float price }"#;
+        let result = parse(input);
+        assert!(result.is_ok(), "Failed: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_cypress_er_generic_types() {
+        let input = r#"erDiagram
+          BOOK {
+            string title
+            string[] authors
+            type~T~ type
+          }"#;
+        let result = parse(input);
+        assert!(result.is_ok(), "Failed: {:?}", result.err());
+    }
+
     // Prototype pollution tests
     #[test]
     fn should_work_with_proto_property() {
