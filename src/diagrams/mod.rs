@@ -1,5 +1,6 @@
 //! Diagram types and parsing
 
+pub mod class;
 pub mod flowchart;
 pub mod info;
 pub mod mindmap;

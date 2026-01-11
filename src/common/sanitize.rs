@@ -103,24 +103,43 @@ pub fn sanitize_text(text: &str, config: &Config) -> String {
 /// This converts TypeScript-style generic notation using tildes to angle brackets.
 /// For example: `Array~Array~string~~` becomes `Array<Array<string>>`
 pub fn parse_generic_types(input: &str) -> String {
-    // Split on commas first
-    let input_sets: Vec<&str> = input.split(',').collect();
+    // Split on commas but keep the comma as a separate element
+    // This matches the JavaScript behavior of split(/(,)/)
+    let mut input_sets: Vec<String> = Vec::new();
+    let mut last_end = 0;
+    for (i, _) in input.match_indices(',') {
+        if i > last_end {
+            input_sets.push(input[last_end..i].to_string());
+        }
+        input_sets.push(",".to_string());
+        last_end = i + 1;
+    }
+    if last_end < input.len() {
+        input_sets.push(input[last_end..].to_string());
+    }
+
     let mut output: Vec<String> = Vec::new();
 
     let mut i = 0;
     while i < input_sets.len() {
-        let this_set = input_sets[i];
+        let this_set = &input_sets[i];
 
-        // Check if we need to combine with previous and next sets
-        if i > 0 && i + 1 < input_sets.len() {
-            let previous_set = output.last().map(|s| s.as_str()).unwrap_or("");
-            let next_set = input_sets[i + 1];
+        // If the original input included a value such as "~K, V~", these will be split into
+        // an array of ["~K", ",", " V~"].
+        // This means that on each call of process_set, there will only be 1 ~ present
+        // To account for this, if we encounter a ",", we are checking the previous and next sets
+        // to see if they contain matching ~'s
+        // in which case we are assuming that they should be rejoined and sent to be processed
+        if this_set == "," && i > 0 && i + 1 < input_sets.len() {
+            let previous_set = &input_sets[i - 1];
+            let next_set = &input_sets[i + 1];
 
             if should_combine_sets(previous_set, next_set) {
-                // Combine previous, comma, and next
-                let combined = format!("{},{},{}", output.pop().unwrap_or_default(), this_set, next_set);
+                let combined = format!("{},{}", previous_set, next_set);
+                i += 1; // Move the index forward to skip the next iteration since we're combining
+                output.pop(); // Remove the previously added set
                 output.push(process_set(&combined));
-                i += 2; // Skip the next set since we combined it
+                i += 1;
                 continue;
             }
         }
@@ -129,7 +148,7 @@ pub fn parse_generic_types(input: &str) -> String {
         i += 1;
     }
 
-    output.join(",")
+    output.join("")
 }
 
 fn should_combine_sets(previous_set: &str, next_set: &str) -> bool {
