@@ -169,7 +169,7 @@ fn process_styled_vertex(pair: pest::iterators::Pair<Rule>, db: &mut FlowchartDb
             Rule::vertex => {
                 vertex_id = process_vertex(inner, db)?;
             }
-            Rule::identifier => {
+            Rule::class_name => {
                 class_name = Some(inner.as_str().to_string());
             }
             _ => {}
@@ -651,31 +651,21 @@ mod tests {
     fn test_parse_class_def() {
         let input = "flowchart LR\nclassDef myClass fill:#f9f";
         let result = parse(input);
-        println!("Result: {:?}", result);
         assert!(result.is_ok(), "Failed to parse: {:?}", result);
         let db = result.unwrap();
-        assert!(db.get_classes().contains_key("myClass"),
-            "myClass should be defined as a class, got classes: {:?}, vertices: {:?}",
-            db.get_classes(), db.get_vertices());
+        assert!(db.get_classes().contains_key("myClass"), "myClass should be defined");
     }
 
     #[test]
     fn test_parse_subgraph() {
-        // First, test if the subgraph_stmt rule works directly
-        let input = "subgraph sub1\nA\nend";
-        let result = FlowchartParser::parse(Rule::subgraph_stmt, input);
-        println!("Direct subgraph_stmt result: {:?}", result);
-
-        // Then test the full diagram
         let input = r#"flowchart LR
 subgraph sub1[Title]
     A --> B
 end"#;
         let result = parse(input);
-        println!("Full diagram result: {:?}", result);
         assert!(result.is_ok(), "Failed to parse: {:?}", result);
         let db = result.unwrap();
-        assert!(!db.subgraphs().is_empty(), "Should have subgraphs, got db: {:?}", db);
+        assert!(!db.subgraphs().is_empty(), "Should have subgraphs");
     }
 
     #[test]
@@ -701,5 +691,119 @@ click A myCallback"#;
         let input = "flowchart LR\nA --> B\nlinkStyle 0 stroke:#ff0";
         let result = parse(input);
         assert!(result.is_ok(), "Failed to parse: {:?}", result);
+    }
+
+    #[test]
+    fn test_parse_node_with_class() {
+        let input = "flowchart LR\nA:::myClass --> B";
+        let result = parse(input);
+        assert!(result.is_ok(), "Failed to parse: {:?}", result);
+        let db = result.unwrap();
+        let vertex = db.get_vertices().get("A").expect("Vertex A should exist");
+        assert!(vertex.classes.contains(&"myClass".to_string()));
+    }
+
+    #[test]
+    fn test_parse_multiple_edges() {
+        let input = "flowchart LR\nA --> B --> C";
+        let result = parse(input);
+        assert!(result.is_ok(), "Failed to parse: {:?}", result);
+        let db = result.unwrap();
+        assert_eq!(db.get_edges().len(), 2);
+    }
+
+    #[test]
+    fn test_parse_graph_keyword() {
+        let input = "graph TD\nA --> B";
+        let result = parse(input);
+        assert!(result.is_ok(), "Failed to parse with 'graph' keyword: {:?}", result);
+    }
+
+    #[test]
+    fn test_parse_thick_arrow() {
+        let input = "flowchart LR\nA ==> B";
+        let result = parse(input);
+        assert!(result.is_ok(), "Failed to parse thick arrow: {:?}", result);
+        let db = result.unwrap();
+        assert_eq!(db.get_edges().len(), 1);
+    }
+
+    #[test]
+    fn test_parse_dotted_arrow() {
+        let input = "flowchart LR\nA -.-> B";
+        let result = parse(input);
+        assert!(result.is_ok(), "Failed to parse dotted arrow: {:?}", result);
+        let db = result.unwrap();
+        assert_eq!(db.get_edges().len(), 1);
+    }
+
+    #[test]
+    fn test_parse_hexagon_shape() {
+        let input = "flowchart LR\nA{{Hexagon}}";
+        let result = parse(input);
+        assert!(result.is_ok(), "Failed to parse hexagon: {:?}", result);
+        let db = result.unwrap();
+        let vertex = db.get_vertices().get("A").unwrap();
+        assert_eq!(vertex.vertex_type, Some(FlowVertexType::Hexagon));
+    }
+
+    #[test]
+    fn test_parse_acc_title() {
+        let input = "flowchart LR\naccTitle: My Chart Title\nA --> B";
+        let result = parse(input);
+        assert!(result.is_ok(), "Failed to parse: {:?}", result);
+        let db = result.unwrap();
+        assert_eq!(db.get_acc_title(), Some("My Chart Title"));
+    }
+
+    #[test]
+    fn test_parse_quoted_text() {
+        let input = r#"flowchart LR
+A["Node with spaces"]"#;
+        let result = parse(input);
+        assert!(result.is_ok(), "Failed to parse quoted text: {:?}", result);
+        let db = result.unwrap();
+        let vertex = db.get_vertices().get("A").unwrap();
+        assert_eq!(vertex.text, Some("Node with spaces".to_string()));
+    }
+
+    #[test]
+    fn test_parse_semicolon_newline() {
+        let input = "flowchart LR;A --> B;C --> D";
+        let result = parse(input);
+        assert!(result.is_ok(), "Failed to parse semicolon-separated: {:?}", result);
+        let db = result.unwrap();
+        assert_eq!(db.get_edges().len(), 2);
+    }
+
+    #[test]
+    fn test_parse_bidirectional_arrow() {
+        let input = "flowchart LR\nA <--> B";
+        let result = parse(input);
+        assert!(result.is_ok(), "Failed to parse bidirectional: {:?}", result);
+    }
+
+    #[test]
+    fn test_parse_node_group() {
+        let input = "flowchart LR\nA & B --> C";
+        let result = parse(input);
+        assert!(result.is_ok(), "Failed to parse node group: {:?}", result);
+        let db = result.unwrap();
+        // Should have edges from both A and B to C
+        assert_eq!(db.get_edges().len(), 2);
+    }
+
+    #[test]
+    fn test_parse_nested_subgraph() {
+        let input = r#"flowchart LR
+subgraph outer
+    subgraph inner
+        A --> B
+    end
+end"#;
+        let result = parse(input);
+        assert!(result.is_ok(), "Failed to parse nested subgraph: {:?}", result);
+        let db = result.unwrap();
+        assert_eq!(db.subgraphs().len(), 2);
     }
 }

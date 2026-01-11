@@ -123,27 +123,31 @@ link = {
     link_with_text | simple_link
 }
 
+// Simple link without text - must not be followed by |
 simple_link = {
-    link_id? ~ link_arrow
+    link_id? ~ link_arrow ~ !"|"
 }
 
 link_with_text = {
-    link_id? ~ link_start ~ edge_text ~ link_end
-    | link_id? ~ link_arrow ~ "|" ~ text ~ "|"
+    link_id? ~ link_arrow ~ "|" ~ text ~ "|"
+    | link_id? ~ link_start ~ edge_text ~ link_end
 }
 
 link_id = { (LETTER | DIGIT | "_")+ ~ "@" }
 
 // Solid lines - atomic to prevent whitespace insertion
+// Order matters: try more specific/longer patterns first
 link_arrow = @{
-    arrow_start? ~ "-"+ ~ arrow_end?      // --- or x--- or ---x or x---x
-    | arrow_start? ~ "="+ ~ arrow_end?    // === thick
-    | arrow_start? ~ "-"? ~ "."+ ~ "-"? ~ arrow_end?  // -.- dotted
+    arrow_start? ~ "-." ~ "-"? ~ arrow_end  // -.-> or -..-> dotted with arrow
+    | arrow_start? ~ "-." ~ "-"?            // -.- or -..- dotted no end arrow
+    | arrow_start? ~ "="+ ~ arrow_end?      // === thick
+    | arrow_start? ~ "-"+ ~ arrow_end?      // --- or x--- or ---x or x---x
     | "~"+ // invisible
 }
 
+// link_start should not be followed immediately by arrow_end (to distinguish from full arrows)
 link_start = @{
-    arrow_start? ~ ("--" | "==" | "-.")
+    arrow_start? ~ ("--" | "==" | "-.") ~ !arrow_end
 }
 
 link_end = @{
@@ -287,8 +291,18 @@ reserved_keyword = {
     "end" | "subgraph" | "classDef" | "class" | "style" | "linkStyle" | "click" | "direction" | "accTitle" | "accDescr"
 }
 
+// identifier cannot contain ::: (class separator)
+// First char, then more chars but stop before :::
 identifier = @{
-    !reserved_keyword ~ (LETTER | DIGIT | "_" | "-" | "." | ":" | "#" | "*" | "!" | "?" | UNICODE_LETTER)+
+    !reserved_keyword ~ id_start ~ (!":::" ~ id_char)*
+}
+
+id_start = _{
+    LETTER | DIGIT | "_" | "#" | "*" | "!" | "?" | UNICODE_LETTER
+}
+
+id_char = _{
+    LETTER | DIGIT | "_" | "-" | "." | ":" | "#" | "*" | "!" | "?" | UNICODE_LETTER
 }
 
 identifier_list = {
