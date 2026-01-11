@@ -507,6 +507,10 @@ mod tests {
             let state = db.get_state("State1").unwrap();
             assert!(!state.descriptions.is_empty());
         }
+
+        // Note: Numeric-only state IDs (like "1") are not currently supported
+        // because they conflict with the case-insensitive "state" keyword
+        // (e.g., "State1" would be parsed as "state" + "1")
     }
 
     mod direction {

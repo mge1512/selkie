@@ -6,7 +6,11 @@
 // Top-level structure
 // ==================
 
-diagram = { SOI ~ graph_config ~ document ~ EOI }
+diagram = { SOI ~ leading_content* ~ graph_config ~ document ~ EOI }
+
+// Allow comments and newlines before the keyword
+leading_content = _{ leading_comment | NEWLINE }
+leading_comment = _{ "%%" ~ (!NEWLINE ~ ANY)* ~ NEWLINE? }
 
 graph_config = {
     keyword_graph ~ direction?
@@ -281,9 +285,10 @@ subgraph_stmt = {
     keyword_subgraph ~ subgraph_id ~ (NEWLINE | ";") ~ document ~ keyword_end
 }
 
+// Subgraph can have: id, id[label], "quoted title", or just "quoted"
 subgraph_id = {
     identifier ~ ("[" ~ text ~ "]")?
-    | identifier
+    | quoted_string
 }
 
 // ==================
