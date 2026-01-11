@@ -1,6 +1,7 @@
 //! Diagram types and parsing
 
 pub mod flowchart;
+pub mod mindmap;
 pub mod pie;
 
 mod detect;
@@ -14,6 +15,7 @@ use crate::error::Result;
 pub enum Diagram {
     Flowchart(flowchart::FlowchartDb),
     Pie(pie::PieDb),
+    Mindmap(mindmap::MindmapDb),
 }
 
 /// Parse a diagram of a specific type
@@ -26,6 +28,10 @@ pub fn parse(diagram_type: DiagramType, input: &str) -> Result<Diagram> {
         DiagramType::Pie => {
             let db = pie::parse(input)?;
             Ok(Diagram::Pie(db))
+        }
+        DiagramType::Mindmap => {
+            let db = mindmap::parse(input)?;
+            Ok(Diagram::Mindmap(db))
         }
     }
 }

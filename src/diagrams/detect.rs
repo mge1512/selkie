@@ -10,7 +10,7 @@ use crate::error::{MermaidError, Result};
 pub enum DiagramType {
     Flowchart,
     Pie,
-    // Future diagram types will be added here
+    Mindmap,
 }
 
 // Regex patterns for detecting diagram types
@@ -18,9 +18,9 @@ static FLOWCHART_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i)^\s*(flowchart|graph)\s*(TB|BT|RL|LR|TD)?").unwrap()
 });
 
-static PIE_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)^\s*pie").unwrap()
-});
+static PIE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)^\s*pie").unwrap());
+
+static MINDMAP_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)^\s*mindmap").unwrap());
 
 /// Detect the type of diagram from input text
 pub fn detect_type(input: &str) -> Result<DiagramType> {
@@ -30,6 +30,10 @@ pub fn detect_type(input: &str) -> Result<DiagramType> {
 
     if PIE_RE.is_match(&cleaned) {
         return Ok(DiagramType::Pie);
+    }
+
+    if MINDMAP_RE.is_match(&cleaned) {
+        return Ok(DiagramType::Mindmap);
     }
 
     if FLOWCHART_RE.is_match(&cleaned) {
@@ -54,15 +58,11 @@ fn remove_frontmatter(input: &str) -> String {
 
 /// Remove comments from input
 fn remove_comments(input: &str) -> String {
-    let mut result = String::new();
-    for line in input.lines() {
-        let trimmed = line.trim();
-        if !trimmed.starts_with("%%") {
-            result.push_str(line);
-            result.push('\n');
-        }
-    }
-    result
+    input
+        .lines()
+        .filter(|line| !line.trim().starts_with("%%"))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 #[cfg(test)]
@@ -71,16 +71,40 @@ mod tests {
 
     #[test]
     fn detect_flowchart() {
-        assert_eq!(detect_type("flowchart LR\n  A --> B").unwrap(), DiagramType::Flowchart);
-        assert_eq!(detect_type("graph TD\n  A --> B").unwrap(), DiagramType::Flowchart);
-        assert_eq!(detect_type("  flowchart TB\n  A --> B").unwrap(), DiagramType::Flowchart);
+        assert_eq!(
+            detect_type("flowchart LR\n  A --> B").unwrap(),
+            DiagramType::Flowchart
+        );
+        assert_eq!(
+            detect_type("graph TD\n  A --> B").unwrap(),
+            DiagramType::Flowchart
+        );
+        assert_eq!(
+            detect_type("  flowchart TB\n  A --> B").unwrap(),
+            DiagramType::Flowchart
+        );
     }
 
     #[test]
     fn detect_pie() {
         assert_eq!(detect_type("pie\n  \"A\": 50").unwrap(), DiagramType::Pie);
         assert_eq!(detect_type("  pie\n  \"A\": 50").unwrap(), DiagramType::Pie);
-        assert_eq!(detect_type("pie showData\n  \"A\": 50").unwrap(), DiagramType::Pie);
+        assert_eq!(
+            detect_type("pie showData\n  \"A\": 50").unwrap(),
+            DiagramType::Pie
+        );
+    }
+
+    #[test]
+    fn detect_mindmap() {
+        assert_eq!(
+            detect_type("mindmap\n  root").unwrap(),
+            DiagramType::Mindmap
+        );
+        assert_eq!(
+            detect_type("  mindmap\n  root").unwrap(),
+            DiagramType::Mindmap
+        );
     }
 
     #[test]
