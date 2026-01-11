@@ -8,8 +8,10 @@
 
 diagram = { SOI ~ leading_content* ~ graph_config ~ document ~ EOI }
 
-// Allow comments and newlines before the keyword
-leading_content = _{ leading_comment | NEWLINE }
+// Allow comments, directives, and newlines before the keyword
+leading_content = _{ init_directive | leading_comment | NEWLINE }
+// Init directive: %%{init: {...}}%%  - note: look for }%% to handle nested braces in JSON
+init_directive = _{ "%%{" ~ (!"}%%" ~ ANY)* ~ "}%%" ~ NEWLINE? }
 leading_comment = _{ "%%" ~ (!NEWLINE ~ ANY)* ~ NEWLINE? }
 
 graph_config = {
@@ -175,8 +177,9 @@ text = {
     md_string | quoted_string | plain_text
 }
 
+// Quoted strings support escape sequences including line continuations (backslash-newline)
 quoted_string = @{ "\"" ~ inner_string ~ "\"" }
-inner_string = @{ (!("\"") ~ ANY)* }
+inner_string = @{ ("\\" ~ ANY | !("\"") ~ ANY)* }
 
 md_string = @{ "\"`" ~ md_content ~ "`\"" }
 md_content = @{ (!"`\"" ~ ANY)* }
