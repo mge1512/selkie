@@ -1,6 +1,7 @@
 //! Diagram types and parsing
 
 pub mod class;
+pub mod er;
 pub mod flowchart;
 pub mod git;
 pub mod info;
