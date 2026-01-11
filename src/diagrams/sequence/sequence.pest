@@ -328,8 +328,19 @@ arrow_type = @{
     // Central connection arrows (bidirectional with ())
     "()->>()-" | "()->>()+" | "()-->>()-" | "()-->>()+" |
     "()-x()-" | "()-x()+" | "()--x()-" | "()--x()+" |
-    "()->>(" | "()-->>()" | "()-x()" | "()--x()" |
-    // Bidirectional arrows
+    "()-->>()" | "()-x()" | "()--x()" |
+    "()->>()" |  // Central connection solid open arrow
+    // Central connection to regular actor (no trailing ())
+    "()-->>-" | "()-->>+" | "()-->>"|
+    "()->>-" | "->>()+" | "()->>" |
+    "()-->-" | "()-->+" | "()-->" |
+    "()->-" | "()->+" | "()->" |
+    "()-x-" | "()-x+" | "()-x" |
+    "()--x-" | "()--x+" | "()--x" |
+    // Bidirectional arrows with central connection
+    "()<<->>()-" | "()<<->>()+" | "()<<-->>()-" | "()<<-->>()+" |
+    "()<<->>()" | "()<<-->>()" |
+    // Standard bidirectional arrows
     "<<->>-" | "<<->>+" | "<<-->>-" | "<<-->>+" |
     "<<->>" | "<<-->>" |
     // Central connection single-side
