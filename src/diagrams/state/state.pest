@@ -150,9 +150,12 @@ state_with_body = {
     (quoted_string | state_id) ~ alias? ~ "{" ~ document ~ "}"
 }
 
-// Special state types (support both << >> and HTML entity &lt;&lt; &gt;&gt;)
+// Special state types (support << >>, HTML entity &lt;&lt; &gt;&gt;, and [[ ]])
 state_special = {
-    state_id ~ (("<<" | "&lt;&lt;") ~ special_type ~ (">>" | "&gt;&gt;"))
+    state_id ~ (
+        ("<<" | "&lt;&lt;") ~ special_type ~ (">>" | "&gt;&gt;")
+        | "[[" ~ special_type ~ "]]"
+    )
 }
 
 special_type = { ^"fork" | ^"join" | ^"choice" }

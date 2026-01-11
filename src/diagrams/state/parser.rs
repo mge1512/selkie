@@ -587,6 +587,15 @@ mod tests {
             let state = db.get_state("choiceState").unwrap();
             assert_eq!(state.state_type, StateType::Choice);
         }
+
+        #[test]
+        fn should_parse_choice_state_with_bracket_syntax() {
+            let result = parse("stateDiagram\nstate choiceState [[choice]]");
+            assert!(result.is_ok());
+            let db = result.unwrap();
+            let state = db.get_state("choiceState").unwrap();
+            assert_eq!(state.state_type, StateType::Choice);
+        }
     }
 
     mod composite_states {
