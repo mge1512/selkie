@@ -6,6 +6,7 @@ pub mod git;
 pub mod info;
 pub mod mindmap;
 pub mod pie;
+pub mod sequence;
 
 mod detect;
 
