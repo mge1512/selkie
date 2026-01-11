@@ -662,6 +662,29 @@ mod tests {
         }
     }
 
+    mod notes {
+        use super::*;
+
+        #[test]
+        fn should_parse_multiline_note() {
+            let result = parse(
+                "stateDiagram-v2
+    State1: The state with a note
+    note right of State1
+      Important information! You can write
+      notes.
+    end note",
+            );
+            assert!(result.is_ok(), "Parse error: {:?}", result.err());
+        }
+
+        #[test]
+        fn should_parse_inline_note() {
+            let result = parse("stateDiagram\nnote right of State1 : Short note");
+            assert!(result.is_ok(), "Parse error: {:?}", result.err());
+        }
+    }
+
     mod complex_diagrams {
         use super::*;
 

@@ -208,8 +208,10 @@ note_block = {
     NEWLINE ~ note_lines ~ ^"end" ~ ^"note"
 }
 
+// Note lines - match anything until "end note"
+// Using common case variations since ^ doesn't work in atomic rules
 note_lines = @{
-    (!(^"end" ~ ^"note") ~ ANY)*
+    (!("end note" | "end Note" | "End note" | "End Note" | "END NOTE" | "END note") ~ ANY)*
 }
 
 // ==================
