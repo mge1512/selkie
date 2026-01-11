@@ -140,30 +140,30 @@ fn validate_with_rust(text: &str) -> (bool, String, String) {
         None => return (false, "Unknown diagram type".to_string(), String::new()),
     };
 
-    let result = match dtype {
-        "sequence" => mermaid::diagrams::sequence::parse(&clean_text).map(|_| ()),
-        "flowchart" => mermaid::diagrams::flowchart::parse(&clean_text).map(|_| ()),
-        "class" => mermaid::diagrams::class::parse(&clean_text).map(|_| ()),
-        "state" => mermaid::diagrams::state::parse(&clean_text).map(|_| ()),
-        "er" => mermaid::diagrams::er::parse(&clean_text).map(|_| ()),
-        "gantt" => mermaid::diagrams::gantt::parse(&clean_text).map(|_| ()),
-        "pie" => mermaid::diagrams::pie::parse(&clean_text).map(|_| ()),
-        "mindmap" => mermaid::diagrams::mindmap::parse(&clean_text).map(|_| ()),
-        "timeline" => mermaid::diagrams::timeline::parse(&clean_text).map(|_| ()),
-        "journey" => mermaid::diagrams::journey::parse(&clean_text).map(|_| ()),
-        "quadrant" => mermaid::diagrams::quadrant::parse(&clean_text).map(|_| ()),
-        "xychart" => mermaid::diagrams::xychart::parse(&clean_text).map(|_| ()),
-        "sankey" => mermaid::diagrams::sankey::parse(&clean_text).map(|_| ()),
-        "packet" => mermaid::diagrams::packet::parse(&clean_text).map(|_| ()),
-        "block" => mermaid::diagrams::block::parse(&clean_text).map(|_| ()),
-        "architecture" => mermaid::diagrams::architecture::parse(&clean_text).map(|_| ()),
-        "c4" => mermaid::diagrams::c4::parse(&clean_text).map(|_| ()),
-        "git" => mermaid::diagrams::git::parse(&clean_text).map(|_| ()),
-        "requirement" => mermaid::diagrams::requirement::parse(&clean_text).map(|_| ()),
-        "kanban" => mermaid::diagrams::kanban::parse(&clean_text).map(|_| ()),
-        "info" => mermaid::diagrams::info::parse(&clean_text).map(|_| ()),
-        "radar" => mermaid::diagrams::radar::parse(&clean_text).map(|_| ()),
-        "treemap" => mermaid::diagrams::treemap::parse(&clean_text).map(|_| ()),
+    let result: Result<(), String> = match dtype {
+        "sequence" => mermaid::diagrams::sequence::parse(&clean_text).map(|_| ()).map_err(|e| e.to_string()),
+        "flowchart" => mermaid::diagrams::flowchart::parse(&clean_text).map(|_| ()).map_err(|e| e.to_string()),
+        "class" => mermaid::diagrams::class::parse(&clean_text).map(|_| ()).map_err(|e| e.to_string()),
+        "state" => mermaid::diagrams::state::parse(&clean_text).map(|_| ()).map_err(|e| e.to_string()),
+        "er" => mermaid::diagrams::er::parse(&clean_text).map(|_| ()).map_err(|e| e.to_string()),
+        "gantt" => mermaid::diagrams::gantt::parse(&clean_text).map(|_| ()).map_err(|e| e.to_string()),
+        "pie" => mermaid::diagrams::pie::parse(&clean_text).map(|_| ()).map_err(|e| e.to_string()),
+        "mindmap" => mermaid::diagrams::mindmap::parse(&clean_text).map(|_| ()).map_err(|e| e.to_string()),
+        "timeline" => mermaid::diagrams::timeline::parse(&clean_text).map(|_| ()).map_err(|e| e.to_string()),
+        "journey" => mermaid::diagrams::journey::parse(&clean_text).map(|_| ()).map_err(|e| e.to_string()),
+        "quadrant" => mermaid::diagrams::quadrant::parse(&clean_text).map(|_| ()).map_err(|e| e.to_string()),
+        "xychart" => mermaid::diagrams::xychart::parse(&clean_text).map(|_| ()).map_err(|e| e.to_string()),
+        "sankey" => mermaid::diagrams::sankey::parse(&clean_text).map(|_| ()).map_err(|e| e.to_string()),
+        "packet" => mermaid::diagrams::packet::parse(&clean_text).map(|_| ()).map_err(|e| e.to_string()),
+        "block" => mermaid::diagrams::block::parse(&clean_text).map(|_| ()).map_err(|e| e.to_string()),
+        "architecture" => mermaid::diagrams::architecture::parse(&clean_text).map(|_| ()).map_err(|e| e.to_string()),
+        "c4" => mermaid::diagrams::c4::parse(&clean_text).map(|_| ()).map_err(|e| e.to_string()),
+        "git" => mermaid::diagrams::git::parse(&clean_text).map(|_| ()).map_err(|e| e.to_string()),
+        "requirement" => mermaid::diagrams::requirement::parse(&clean_text).map(|_| ()).map_err(|e| e.to_string()),
+        "kanban" => mermaid::diagrams::kanban::parse(&clean_text).map(|_| ()).map_err(|e| e.to_string()),
+        "info" => mermaid::diagrams::info::parse(&clean_text).map(|_| ()).map_err(|e| e.to_string()),
+        "radar" => mermaid::diagrams::radar::parse(&clean_text).map(|_| ()).map_err(|e| e.to_string()),
+        "treemap" => mermaid::diagrams::treemap::parse(&clean_text).map(|_| ()).map_err(|e| e.to_string()),
         _ => return (false, format!("No Rust parser for type: {}", dtype), dtype.to_string()),
     };
 
@@ -397,7 +397,10 @@ fn main() {
     let mut output_path: Option<PathBuf> = None;
     let mut skip_ts = false;
     let mut verbose = false;
-    let mut validator_path = PathBuf::from("tools/validation");
+    // Default to tools/validation relative to current working directory
+    let mut validator_path = std::env::current_dir()
+        .unwrap_or_default()
+        .join("tools/validation");
 
     // Parse arguments
     let mut i = 2;
