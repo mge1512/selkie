@@ -147,9 +147,13 @@ class_body_line = {
 
 bracket_comment = @{ "%%" ~ (!NEWLINE ~ ANY)* }
 
-annotation_line = { "<<" ~ annotation_text ~ ">>" }
+// Support both << >> and HTML entities &lt;&lt; &gt;&gt;
+annotation_line = { annotation_open ~ annotation_text ~ annotation_close }
 
-annotation_text = @{ (!">>" ~ ANY)+ }
+annotation_open = _{ "<<" | "&lt;&lt;" }
+annotation_close = _{ ">>" | "&gt;&gt;" }
+
+annotation_text = @{ (!(">>" | "&gt;&gt;") ~ ANY)+ }
 
 separator_line = @{ ".." ~ (!NEWLINE ~ ANY)* | "==" ~ (!NEWLINE ~ ANY)* | "__" ~ (!NEWLINE ~ ANY)* | "--" ~ (!NEWLINE ~ ANY)* }
 
@@ -207,7 +211,7 @@ relation_label = @{ (!NEWLINE ~ ANY)+ }
 // ==================
 
 annotation_stmt = {
-    "<<" ~ annotation_text ~ ">>" ~ class_name
+    annotation_open ~ annotation_text ~ annotation_close ~ class_name
 }
 
 // ==================
