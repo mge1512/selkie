@@ -1,6 +1,7 @@
 //! Flowchart types
 
 use std::collections::HashMap;
+use std::str::FromStr;
 
 use crate::common::CommonDb;
 
@@ -26,26 +27,28 @@ pub enum FlowVertexType {
     LeanLeft,
 }
 
-impl FlowVertexType {
-    pub fn from_str(s: &str) -> Option<Self> {
+impl FromStr for FlowVertexType {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
-            "square" => Some(Self::Square),
-            "doublecircle" => Some(Self::DoubleCircle),
-            "circle" => Some(Self::Circle),
-            "ellipse" => Some(Self::Ellipse),
-            "stadium" => Some(Self::Stadium),
-            "subroutine" => Some(Self::Subroutine),
-            "rect" => Some(Self::Rect),
-            "cylinder" => Some(Self::Cylinder),
-            "round" => Some(Self::Round),
-            "diamond" => Some(Self::Diamond),
-            "hexagon" => Some(Self::Hexagon),
-            "odd" => Some(Self::Odd),
-            "trapezoid" => Some(Self::Trapezoid),
-            "inv_trapezoid" => Some(Self::InvTrapezoid),
-            "lean_right" => Some(Self::LeanRight),
-            "lean_left" => Some(Self::LeanLeft),
-            _ => None,
+            "square" => Ok(Self::Square),
+            "doublecircle" => Ok(Self::DoubleCircle),
+            "circle" => Ok(Self::Circle),
+            "ellipse" => Ok(Self::Ellipse),
+            "stadium" => Ok(Self::Stadium),
+            "subroutine" => Ok(Self::Subroutine),
+            "rect" => Ok(Self::Rect),
+            "cylinder" => Ok(Self::Cylinder),
+            "round" => Ok(Self::Round),
+            "diamond" => Ok(Self::Diamond),
+            "hexagon" => Ok(Self::Hexagon),
+            "odd" => Ok(Self::Odd),
+            "trapezoid" => Ok(Self::Trapezoid),
+            "inv_trapezoid" => Ok(Self::InvTrapezoid),
+            "lean_right" => Ok(Self::LeanRight),
+            "lean_left" => Ok(Self::LeanLeft),
+            _ => Err(()),
         }
     }
 }
@@ -63,6 +66,22 @@ pub enum FlowTextType {
 pub struct FlowText {
     pub text: String,
     pub text_type: FlowTextType,
+}
+
+impl FlowText {
+    pub fn new(text: impl Into<String>) -> Self {
+        Self {
+            text: text.into(),
+            text_type: FlowTextType::Text,
+        }
+    }
+
+    pub fn markdown(text: impl Into<String>) -> Self {
+        Self {
+            text: text.into(),
+            text_type: FlowTextType::Markdown,
+        }
+    }
 }
 
 /// A vertex (node) in a flowchart
@@ -167,6 +186,16 @@ pub struct FlowClass {
     pub text_styles: Vec<String>,
 }
 
+impl FlowClass {
+    pub fn new(id: impl Into<String>) -> Self {
+        Self {
+            id: id.into(),
+            styles: Vec::new(),
+            text_styles: Vec::new(),
+        }
+    }
+}
+
 /// A subgraph (container for nodes)
 #[derive(Debug, Clone, Default)]
 pub struct FlowSubGraph {
@@ -188,7 +217,7 @@ pub struct FlowLink {
     pub id: Option<String>,
 }
 
-/// Data returned from getData()
+/// Data returned from get_data()
 #[derive(Debug, Clone)]
 pub struct FlowData {
     pub vertices: HashMap<String, FlowVertex>,
@@ -197,31 +226,63 @@ pub struct FlowData {
     pub subgraphs: Vec<FlowSubGraph>,
 }
 
+/// Flowchart direction
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Direction {
+    #[default]
+    TopToBottom,
+    BottomToTop,
+    LeftToRight,
+    RightToLeft,
+}
+
+impl Direction {
+    /// Parse direction from mermaid syntax
+    pub fn parse(s: &str) -> Self {
+        let s = s.trim();
+        if s.contains('<') {
+            Self::RightToLeft
+        } else if s.contains('^') {
+            Self::BottomToTop
+        } else if s.contains('>') {
+            Self::LeftToRight
+        } else if s.contains('v') || s == "TD" || s == "TB" {
+            Self::TopToBottom
+        } else {
+            match s {
+                "RL" => Self::RightToLeft,
+                "BT" => Self::BottomToTop,
+                "LR" => Self::LeftToRight,
+                _ => Self::TopToBottom,
+            }
+        }
+    }
+
+    /// Convert to short string format (TB, BT, LR, RL)
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::TopToBottom => "TB",
+            Self::BottomToTop => "BT",
+            Self::LeftToRight => "LR",
+            Self::RightToLeft => "RL",
+        }
+    }
+}
+
 /// The flowchart database
 #[derive(Debug, Clone)]
 pub struct FlowchartDb {
-    /// Common database fields
     common: CommonDb,
-    /// Counter for generating unique vertex IDs
     vertex_counter: u32,
-    /// All vertices in the chart
     vertices: HashMap<String, FlowVertex>,
-    /// All edges (with optional default interpolate)
     edges: Vec<FlowEdge>,
-    /// Default interpolation for edges
     default_interpolate: Option<String>,
-    /// Default style for edges
     default_style: Option<Vec<String>>,
-    /// CSS class definitions
     classes: HashMap<String, FlowClass>,
-    /// Subgraphs
     subgraphs: Vec<FlowSubGraph>,
-    /// Subgraph lookup by ID
     subgraph_lookup: HashMap<String, usize>,
-    /// Tooltips for elements
     tooltips: HashMap<String, String>,
-    /// Direction of the flowchart
-    direction: String,
+    direction: Direction,
 }
 
 impl Default for FlowchartDb {
@@ -245,7 +306,7 @@ impl FlowchartDb {
             subgraphs: Vec::new(),
             subgraph_lookup: HashMap::new(),
             tooltips: HashMap::new(),
-            direction: String::from("TB"),
+            direction: Direction::default(),
         }
     }
 
@@ -260,12 +321,12 @@ impl FlowchartDb {
         self.subgraphs.clear();
         self.subgraph_lookup.clear();
         self.tooltips.clear();
-        self.direction = String::from("TB");
+        self.direction = Direction::default();
     }
 
     /// Check if a node exists in any of the given subgraphs
     pub fn exists(&self, subgraphs: &[FlowSubGraph], node_id: &str) -> bool {
-        subgraphs.iter().any(|sg| sg.nodes.contains(&node_id.to_string()))
+        subgraphs.iter().any(|sg| sg.nodes.iter().any(|n| n == node_id))
     }
 
     /// Remove nodes from a subgraph that already exist in other subgraphs
@@ -284,7 +345,8 @@ impl FlowchartDb {
         dir: Option<&str>,
         _metadata: Option<&str>,
     ) {
-        if id.trim().is_empty() {
+        let id = id.trim();
+        if id.is_empty() {
             return;
         }
 
@@ -296,12 +358,13 @@ impl FlowchartDb {
         self.vertex_counter += 1;
 
         if let Some(text_obj) = text_obj {
-            let mut txt = text_obj.text.trim().to_string();
-            // Strip quotes if string starts and ends with a quote
-            if txt.starts_with('"') && txt.ends_with('"') && txt.len() > 1 {
-                txt = txt[1..txt.len() - 1].to_string();
-            }
-            vertex.text = Some(txt);
+            let txt = text_obj.text.trim();
+            // Strip surrounding quotes
+            let txt = txt
+                .strip_prefix('"')
+                .and_then(|s| s.strip_suffix('"'))
+                .unwrap_or(txt);
+            vertex.text = Some(txt.to_string());
             vertex.label_type = text_obj.text_type;
         } else if vertex.text.is_none() {
             vertex.text = Some(id.to_string());
@@ -322,33 +385,37 @@ impl FlowchartDb {
     /// Add an edge between nodes
     fn add_single_link(&mut self, start: &str, end: &str, link_data: Option<&FlowLink>, id: Option<&str>) {
         let mut edge = FlowEdge::new(start, end);
-        edge.interpolate = self.default_interpolate.clone();
+        edge.interpolate.clone_from(&self.default_interpolate);
 
         if let Some(link) = link_data {
             if let Some(text) = &link.text {
-                let mut txt = text.text.trim().to_string();
-                if txt.starts_with('"') && txt.ends_with('"') && txt.len() > 1 {
-                    txt = txt[1..txt.len() - 1].to_string();
-                }
-                edge.text = txt;
+                let txt = text.text.trim();
+                let txt = txt
+                    .strip_prefix('"')
+                    .and_then(|s| s.strip_suffix('"'))
+                    .unwrap_or(txt);
+                edge.text = txt.to_string();
                 edge.label_type = text.text_type.clone();
             }
-            edge.edge_type = link.link_type.clone();
+            edge.edge_type.clone_from(&link.link_type);
             edge.stroke = link.stroke.clone();
-            if let Some(len) = link.length {
-                edge.length = Some(len.min(10));
-            }
+            edge.length = link.length.map(|l| l.min(10));
         }
 
         if let Some(user_id) = id {
-            if !self.edges.iter().any(|e| e.id.as_deref() == Some(user_id)) {
+            let id_exists = self.edges.iter().any(|e| e.id.as_deref() == Some(user_id));
+            if !id_exists {
                 edge.id = Some(user_id.to_string());
                 edge.is_user_defined_id = true;
             }
         }
 
         if edge.id.is_none() {
-            let existing_count = self.edges.iter().filter(|e| e.start == edge.start && e.end == edge.end).count();
+            let existing_count = self
+                .edges
+                .iter()
+                .filter(|e| e.start == start && e.end == end)
+                .count();
             edge.id = Some(format!("L-{}-{}-{}", start, end, existing_count));
         }
 
@@ -358,11 +425,12 @@ impl FlowchartDb {
     /// Add links between multiple start and end nodes
     pub fn add_link(&mut self, starts: &[&str], ends: &[&str], link_data: Option<&FlowLink>) {
         let id = link_data.and_then(|l| l.id.as_deref());
+        let last_start_idx = starts.len().saturating_sub(1);
 
         for (si, start) in starts.iter().enumerate() {
             for (ei, end) in ends.iter().enumerate() {
                 // Only use ID for last start and first end
-                let use_id = si == starts.len() - 1 && ei == 0;
+                let use_id = si == last_start_idx && ei == 0;
                 self.add_single_link(start, end, link_data, if use_id { id } else { None });
             }
         }
@@ -370,18 +438,20 @@ impl FlowchartDb {
 
     /// Update link interpolation
     pub fn update_link_interpolate(&mut self, positions: &[String], interpolate: &str) {
+        let interpolate = interpolate.to_string();
+
         for pos in positions {
             if pos == "default" {
-                self.default_interpolate = Some(interpolate.to_string());
-                // Apply to existing edges that don't have explicit interpolate
+                self.default_interpolate = Some(interpolate.clone());
+                // Apply to existing edges without explicit interpolate
                 for edge in &mut self.edges {
                     if edge.interpolate.is_none() {
-                        edge.interpolate = Some(interpolate.to_string());
+                        edge.interpolate = Some(interpolate.clone());
                     }
                 }
             } else if let Ok(idx) = pos.parse::<usize>() {
-                if idx < self.edges.len() {
-                    self.edges[idx].interpolate = Some(interpolate.to_string());
+                if let Some(edge) = self.edges.get_mut(idx) {
+                    edge.interpolate = Some(interpolate.clone());
                 }
             }
         }
@@ -391,13 +461,13 @@ impl FlowchartDb {
     pub fn update_link(&mut self, positions: &[usize], style: &[String]) {
         for &pos in positions {
             if pos == usize::MAX {
-                // "default" case
                 self.default_style = Some(style.to_vec());
-            } else if pos < self.edges.len() {
-                self.edges[pos].style = style.to_vec();
-                // If fill not set, add fill:none
-                if !self.edges[pos].style.iter().any(|s| s.starts_with("fill")) {
-                    self.edges[pos].style.push("fill:none".to_string());
+            } else if let Some(edge) = self.edges.get_mut(pos) {
+                edge.style = style.to_vec();
+                // Add fill:none if not already present
+                let has_fill = edge.style.iter().any(|s| s.starts_with("fill"));
+                if !has_fill {
+                    edge.style.push("fill:none".to_string());
                 }
             }
         }
@@ -405,29 +475,26 @@ impl FlowchartDb {
 
     /// Add a CSS class definition
     pub fn add_class(&mut self, ids: &str, styles: &[String]) {
-        // Process styles: join, handle escaped commas, split by semicolons
-        let processed_style: Vec<String> = styles
+        // Process styles: handle escaped commas, convert commas to semicolons
+        let processed: Vec<String> = styles
             .join(",")
-            .replace("\\,", "§§§")
+            .replace("\\,", "\x00") // Temporary placeholder
             .replace(',', ";")
-            .replace("§§§", ",")
+            .replace('\x00', ",")
             .split(';')
-            .map(|s| s.to_string())
             .filter(|s| !s.is_empty())
+            .map(String::from)
             .collect();
 
-        for id in ids.split(',') {
-            let id = id.trim();
-            let class_node = self.classes.entry(id.to_string()).or_insert_with(|| FlowClass {
-                id: id.to_string(),
-                styles: Vec::new(),
-                text_styles: Vec::new(),
-            });
+        for id in ids.split(',').map(str::trim) {
+            let class_node = self
+                .classes
+                .entry(id.to_string())
+                .or_insert_with(|| FlowClass::new(id));
 
-            for style in &processed_style {
+            for style in &processed {
                 if style.contains("color") {
-                    let new_style = style.replace("fill", "bgFill");
-                    class_node.text_styles.push(new_style);
+                    class_node.text_styles.push(style.replace("fill", "bgFill"));
                 }
                 class_node.styles.push(style.clone());
             }
@@ -436,43 +503,30 @@ impl FlowchartDb {
 
     /// Set the direction of the flowchart
     pub fn set_direction(&mut self, dir: &str) {
-        let mut direction = dir.trim().to_string();
-
-        if direction.contains('<') {
-            direction = "RL".to_string();
-        } else if direction.contains('^') {
-            direction = "BT".to_string();
-        } else if direction.contains('>') {
-            direction = "LR".to_string();
-        } else if direction.contains('v') {
-            direction = "TB".to_string();
-        } else if direction == "TD" {
-            direction = "TB".to_string();
-        }
-
-        self.direction = direction;
+        self.direction = Direction::parse(dir);
     }
 
-    /// Get the direction of the flowchart
-    pub fn get_direction(&self) -> &str {
-        &self.direction
+    /// Get the direction of the flowchart as a string
+    pub fn get_direction(&self) -> &'static str {
+        self.direction.as_str()
     }
 
     /// Set class on elements
     pub fn set_class(&mut self, ids: &str, class_name: &str) {
-        for id in ids.split(',') {
-            let id = id.trim();
+        for id in ids.split(',').map(str::trim) {
             if let Some(vertex) = self.vertices.get_mut(id) {
                 vertex.classes.push(class_name.to_string());
             }
+
             for edge in &mut self.edges {
                 if edge.id.as_deref() == Some(id) {
                     edge.classes.push(class_name.to_string());
                 }
             }
+
             if let Some(&idx) = self.subgraph_lookup.get(id) {
-                if idx < self.subgraphs.len() {
-                    self.subgraphs[idx].classes.push(class_name.to_string());
+                if let Some(sg) = self.subgraphs.get_mut(idx) {
+                    sg.classes.push(class_name.to_string());
                 }
             }
         }
@@ -495,12 +549,12 @@ impl FlowchartDb {
     }
 
     /// Get all vertices
-    pub fn get_vertices(&self) -> &HashMap<String, FlowVertex> {
+    pub fn vertices(&self) -> &HashMap<String, FlowVertex> {
         &self.vertices
     }
 
     /// Get all edges
-    pub fn get_edges(&self) -> &[FlowEdge] {
+    pub fn edges(&self) -> &[FlowEdge] {
         &self.edges
     }
 
@@ -510,7 +564,7 @@ impl FlowchartDb {
     }
 
     /// Get all subgraphs
-    pub fn get_subgraphs(&self) -> &[FlowSubGraph] {
+    pub fn subgraphs(&self) -> &[FlowSubGraph] {
         &self.subgraphs
     }
 
@@ -524,7 +578,7 @@ impl FlowchartDb {
         }
     }
 
-    // Common DB passthrough methods
+    // Common DB delegation
     pub fn set_acc_title(&mut self, title: impl Into<String>) {
         self.common.set_acc_title(title);
     }
