@@ -2,6 +2,7 @@
 
 pub mod class;
 pub mod flowchart;
+pub mod git;
 pub mod info;
 pub mod mindmap;
 pub mod pie;
