@@ -137,8 +137,12 @@ style_stmt = {
 // State declarations
 // ==================
 
+// Atomic rule to ensure "state" keyword isn't part of a longer name like "State1"
+// The @ makes it atomic (no implicit whitespace), so the lookahead checks immediately after "state"
+state_keyword = @{ ^"state" ~ !ASCII_ALPHANUMERIC }
+
 state_declaration = {
-    ^"state" ~ state_def
+    state_keyword ~ state_def
 }
 
 state_def = {
@@ -232,8 +236,11 @@ state_ref = {
 
 start_end_marker = { "[*]" }
 
+// State IDs: letters, digits, and underscores
+// - No hyphens (prevents consuming arrow prefixes like "TV--")
+// - Can start with digits (e.g., "1" is a valid state name)
 state_id = @{
-    (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_" | "-")*
+    (ASCII_ALPHA | "_" | ASCII_DIGIT) ~ (ASCII_ALPHANUMERIC | "_")*
 }
 
 arrow = @{ "-->" | "->" }
@@ -242,8 +249,10 @@ transition_label = {
     ":" ~ label_text
 }
 
+// Label text can contain semicolons (for HTML entities like #colon;)
+// Only stop at actual newlines
 label_text = @{
-    (!(NEWLINE | ";") ~ ANY)+
+    (!("\r\n" | "\n") ~ ANY)+
 }
 
 // ==================

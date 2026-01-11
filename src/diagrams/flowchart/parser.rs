@@ -1393,6 +1393,131 @@ A[\LeanLeft/]"#;
         }
     }
 
+    // Tests for edge/link parsing
+    mod edge_tests {
+        use super::*;
+
+        #[test]
+        fn should_parse_link_arrow_directly() {
+            // Test parsing just the link_arrow rule
+            let test_cases = ["-->", "---", "-.->", "===", "--->", "-.", "--", ".->", "<.->", ".-"];
+            for input in &test_cases {
+                let result = FlowchartParser::parse(Rule::link_arrow, input);
+                assert!(result.is_ok(), "Failed to parse link_arrow '{}': {:?}", input, result.err());
+            }
+        }
+
+        #[test]
+        fn should_parse_simple_link_directly() {
+            // Test parsing just the simple_link rule
+            let test_cases = ["-->", "---", "-.->", "==="];
+            for input in &test_cases {
+                let result = FlowchartParser::parse(Rule::simple_link, input);
+                assert!(result.is_ok(), "Failed to parse simple_link '{}': {:?}", input, result.err());
+            }
+        }
+
+        #[test]
+        fn should_parse_link_directly() {
+            // Test parsing just the link rule
+            let test_cases = ["-->", "---", "-.->", "==="];
+            for input in &test_cases {
+                let result = FlowchartParser::parse(Rule::link, input);
+                assert!(result.is_ok(), "Failed to parse link '{}': {:?}", input, result.err());
+            }
+        }
+
+        #[test]
+        fn should_parse_vertex_statement_with_triple_dash() {
+            let test_cases = ["L1 --- L2", "L2 --- C", "A --- B"];
+            for input in &test_cases {
+                let result = FlowchartParser::parse(Rule::vertex_statement, input);
+                assert!(result.is_ok(), "Failed to parse vertex_statement '{}': {:?}", input, result.err());
+            }
+        }
+
+        #[test]
+        fn should_parse_two_statements() {
+            let input = "flowchart TD\nL1 --- L2";
+            let result = parse(input);
+            assert!(result.is_ok(), "Failed to parse: {:?}", result);
+        }
+
+        #[test]
+        fn should_parse_three_statements() {
+            // This is the minimal failing case
+            let input = "flowchart TD\nL1 --- L2\nL2 --- C";
+            let result = parse(input);
+            assert!(result.is_ok(), "Failed to parse: {:?}", result);
+        }
+
+        #[test]
+        fn should_parse_two_arrow_edges() {
+            let input = "flowchart TD\nL1 --> L2\nL2 --> C";
+            let result = parse(input);
+            assert!(result.is_ok(), "Failed to parse: {:?}", result);
+        }
+
+        #[test]
+        fn should_parse_mixed_edges() {
+            let input = "flowchart TD\nL1 --- L2\nL2 --> C";
+            let result = parse(input);
+            assert!(result.is_ok(), "Failed to parse: {:?}", result);
+        }
+
+        #[test]
+        fn should_parse_mixed_edges_reverse() {
+            let input = "flowchart TD\nL1 --> L2\nL2 --- C";
+            let result = parse(input);
+            assert!(result.is_ok(), "Failed to parse: {:?}", result);
+        }
+
+        #[test]
+        fn should_parse_double_dash_edges() {
+            let input = "flowchart TD\nL1 -- L2\nL2 -- C";
+            let result = parse(input);
+            assert!(result.is_ok(), "Failed to parse: {:?}", result);
+        }
+
+        #[test]
+        fn should_parse_four_dash_edges() {
+            let input = "flowchart TD\nL1 ---- L2\nL2 ---- C";
+            let result = parse(input);
+            assert!(result.is_ok(), "Failed to parse: {:?}", result);
+        }
+
+        #[test]
+        fn should_parse_swapped_three_statements() {
+            // Try different node names to see if it's name-related
+            let input = "flowchart TD\nA --- B\nC --- D";
+            let result = parse(input);
+            assert!(result.is_ok(), "Failed to parse: {:?}", result);
+        }
+
+        #[test]
+        fn should_parse_three_dash_single_line() {
+            let input = "flowchart TD\nA --- B";
+            let result = parse(input);
+            assert!(result.is_ok(), "Failed to parse: {:?}", result);
+        }
+
+        #[test]
+        fn should_parse_two_statements_with_indent() {
+            let input = "flowchart TD\n      L1 --- L2";
+            let result = parse(input);
+            assert!(result.is_ok(), "Failed to parse: {:?}", result);
+        }
+
+        #[test]
+        fn should_parse_triple_dash_edge() {
+            let input = r#"flowchart TD
+      L1 --- L2
+      L2 --- C"#;
+            let result = parse(input);
+            assert!(result.is_ok(), "Failed to parse: {:?}", result);
+        }
+    }
+
     // Tests for prototype pollution protection
     mod security_tests {
         use super::*;

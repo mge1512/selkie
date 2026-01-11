@@ -150,6 +150,7 @@ link_id = { (LETTER | DIGIT | "_")+ ~ "@" }
 link_arrow = @{
     arrow_start? ~ "-." ~ "-"? ~ arrow_end  // -.-> or -..-> dotted with arrow
     | arrow_start? ~ "-." ~ "-"?            // -.- or -..- dotted no end arrow
+    | arrow_start? ~ "."+ ~ "-"+ ~ arrow_end?  // .-> or <.-> shorthand dotted
     | arrow_start? ~ "="+ ~ arrow_end?      // === thick
     | arrow_start? ~ "-"+ ~ arrow_end?      // --- or x--- or ---x or x---x
     | "~"+ // invisible
@@ -160,14 +161,16 @@ link_start = @{
     arrow_start? ~ ("--" | "==" | "-.") ~ !arrow_end
 }
 
+// link_end matches the closing part of an edge with text (e.g., -->, --->, ==>, etc.)
 link_end = @{
-    ("--" | "==" | ".-") ~ arrow_end?
+    ("-"+ | "="+ | ".-") ~ arrow_end?
 }
 
 arrow_start = { "x" | "o" | "<" }
 arrow_end = { "x" | "o" | ">" }
 
-edge_text = { (!link_end ~ ANY)+ }
+// Edge text cannot span newlines (prevents cross-line matching with multiple --- edges)
+edge_text = { (!(link_end | "\r\n" | "\n" | ";") ~ ANY)+ }
 
 // ==================
 // Text content

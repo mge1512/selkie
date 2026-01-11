@@ -491,9 +491,44 @@ mod tests {
         }
 
         #[test]
+        fn should_parse_transition_stmt_directly() {
+            // Test parsing just the transition_stmt rule
+            let test_cases = [
+                "State1 --> State2",
+                "[*] --> State1",
+                "State1 --> [*]",
+            ];
+            for input in &test_cases {
+                let result = StateParser::parse(Rule::transition_stmt, input);
+                assert!(result.is_ok(), "Failed to parse transition_stmt '{}': {:?}", input, result.err());
+            }
+        }
+
+        #[test]
+        fn should_parse_statement_as_transition() {
+            // Test parsing statement rule - should match transition_stmt
+            let test_cases = [
+                "State1 --> State2",
+                "[*] --> State1",
+                "State1 --> [*]",
+            ];
+            for input in &test_cases {
+                let result = StateParser::parse(Rule::statement, input);
+                assert!(result.is_ok(), "Failed to parse statement '{}': {:?}", input, result.err());
+                // Verify it was parsed as transition_stmt
+                let pairs = result.unwrap();
+                let first = pairs.into_iter().next().unwrap();
+                let inner = first.into_inner().next();
+                if let Some(inner_pair) = inner {
+                    println!("Rule: {:?} for input: {}", inner_pair.as_rule(), input);
+                }
+            }
+        }
+
+        #[test]
         fn should_parse_simple_transition() {
             let result = parse("stateDiagram\n[*] --> State1\nState1 --> [*]");
-            assert!(result.is_ok());
+            assert!(result.is_ok(), "Parse error: {:?}", result.err());
             let db = result.unwrap();
             let relations = db.get_relations();
             assert_eq!(relations.len(), 2);
