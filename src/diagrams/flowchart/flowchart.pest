@@ -1,0 +1,313 @@
+// Flowchart grammar for mermaid diagrams
+// Based on mermaid.js flow.jison
+
+// ==================
+// Top-level structure
+// ==================
+
+diagram = { SOI ~ WHITESPACE* ~ graph_config ~ document ~ EOI }
+
+graph_config = {
+    keyword_graph ~ WHITESPACE* ~ direction?
+}
+
+document = { (NEWLINE | statement)* }
+
+// ==================
+// Statements
+// ==================
+
+statement = {
+    acc_title_stmt
+    | acc_descr_stmt
+    | class_def_stmt
+    | class_stmt
+    | style_stmt
+    | link_style_stmt
+    | click_stmt
+    | subgraph_stmt
+    | direction_stmt
+    | vertex_statement
+}
+
+// ==================
+// Graph keywords
+// ==================
+
+keyword_graph = _{ "flowchart-elk" | "flowchart" | "graph" }
+keyword_subgraph = _{ "subgraph" }
+keyword_end = _{ "end" }
+
+// ==================
+// Direction
+// ==================
+
+direction = { "LR" | "RL" | "TB" | "TD" | "BT" | "BR" | "<" | ">" | "^" | "v" }
+
+direction_stmt = {
+    "direction" ~ WHITESPACE+ ~ direction
+}
+
+// ==================
+// Vertex statements
+// ==================
+
+vertex_statement = {
+    node ~ (link ~ node)*
+}
+
+node = {
+    node_group | styled_vertex
+}
+
+node_group = {
+    styled_vertex ~ (WHITESPACE* ~ "&" ~ WHITESPACE* ~ styled_vertex)+
+}
+
+styled_vertex = {
+    vertex ~ (WHITESPACE* ~ ":::" ~ WHITESPACE* ~ identifier)?
+}
+
+vertex = {
+    identifier ~ vertex_shape?
+}
+
+// ==================
+// Vertex shapes
+// ==================
+
+vertex_shape = {
+    shape_double_circle   // (((...)))
+    | shape_stadium       // ([...])
+    | shape_subroutine    // [[...]]
+    | shape_cylinder      // [(...))]
+    | shape_circle        // ((...))
+    | shape_ellipse       // (-..-)
+    | shape_hexagon       // {{...}}
+    | shape_diamond       // {...}
+    | shape_trapezoid     // [/...\]
+    | shape_inv_trapezoid // [\../]
+    | shape_lean_right    // [/../]
+    | shape_lean_left     // [\...\]
+    | shape_odd           // >...]
+    | shape_round         // (...)
+    | shape_square        // [...]
+}
+
+shape_square = { "[" ~ text ~ "]" }
+shape_round = { "(" ~ text ~ ")" }
+shape_circle = { "((" ~ text ~ "))" }
+shape_double_circle = { "(((" ~ text ~ ")))" }
+shape_stadium = { "([" ~ text ~ "])" }
+shape_subroutine = { "[[" ~ text ~ "]]" }
+shape_cylinder = { "[(" ~ text ~ ")]" }
+shape_diamond = { "{" ~ text ~ "}" }
+shape_hexagon = { "{{" ~ text ~ "}}" }
+shape_ellipse = { "(-" ~ text ~ "-)" }
+shape_odd = { ">" ~ text ~ "]" }
+shape_trapezoid = { "[/" ~ text ~ "\\]" }
+shape_inv_trapezoid = { "[\\" ~ text ~ "/]" }
+shape_lean_right = { "[/" ~ text ~ "/]" }
+shape_lean_left = { "[\\" ~ text ~ "\\]" }
+
+// ==================
+// Links/edges
+// ==================
+
+link = {
+    link_with_text | simple_link
+}
+
+simple_link = {
+    link_id? ~ link_arrow
+}
+
+link_with_text = {
+    link_id? ~ link_start ~ edge_text ~ link_end
+    | link_id? ~ link_arrow ~ "|" ~ text ~ "|"
+}
+
+link_id = { (LETTER | DIGIT | "_")+ ~ "@" }
+
+// Solid lines
+link_arrow = @{
+    arrow_start? ~ "-"+ ~ arrow_end?      // --- or x--- or ---x or x---x
+    | arrow_start? ~ "="+ ~ arrow_end?    // === thick
+    | arrow_start? ~ "-"? ~ "."+ ~ "-"? ~ arrow_end?  // -.- dotted
+    | "~"+ // invisible
+}
+
+link_start = @{
+    arrow_start? ~ ("--" | "==" | "-.")
+}
+
+link_end = @{
+    ("--" | "==" | ".-") ~ arrow_end?
+}
+
+arrow_start = { "x" | "o" | "<" }
+arrow_end = { "x" | "o" | ">" }
+
+edge_text = { (!link_end ~ ANY)+ }
+
+// ==================
+// Text content
+// ==================
+
+text = {
+    md_string | quoted_string | plain_text
+}
+
+quoted_string = @{ "\"" ~ inner_string ~ "\"" }
+inner_string = @{ (!("\"") ~ ANY)* }
+
+md_string = @{ "\"`" ~ md_content ~ "`\"" }
+md_content = @{ (!"`\"" ~ ANY)* }
+
+plain_text = @{
+    (!("]" | ")" | "}" | "|" | NEWLINE) ~ ANY)+
+}
+
+// ==================
+// Accessibility
+// ==================
+
+acc_title_stmt = {
+    "accTitle" ~ WHITESPACE* ~ ":" ~ WHITESPACE* ~ line_content
+}
+
+acc_descr_stmt = {
+    acc_descr_single | acc_descr_multi
+}
+
+acc_descr_single = {
+    "accDescr" ~ WHITESPACE* ~ ":" ~ WHITESPACE* ~ line_content
+}
+
+acc_descr_multi = {
+    "accDescr" ~ WHITESPACE* ~ "{" ~ multiline_content ~ "}"
+}
+
+line_content = @{ (!NEWLINE ~ ANY)* }
+multiline_content = @{ (!"}" ~ ANY)* }
+
+// ==================
+// Style definitions
+// ==================
+
+class_def_stmt = {
+    ^"classDef" ~ WHITESPACE+ ~ class_id ~ WHITESPACE+ ~ styles
+}
+
+class_id = @{
+    (ASCII_ALPHA | ASCII_DIGIT | "_" | "-")+
+}
+
+class_stmt = {
+    "class" ~ WHITESPACE+ ~ identifier_list ~ WHITESPACE+ ~ identifier
+}
+
+style_stmt = {
+    "style" ~ WHITESPACE+ ~ identifier ~ WHITESPACE+ ~ styles
+}
+
+link_style_stmt = {
+    "linkStyle" ~ WHITESPACE+ ~ (num_list | "default") ~ WHITESPACE+ ~ ("interpolate" ~ WHITESPACE+ ~ identifier ~ WHITESPACE+)? ~ styles
+}
+
+styles = @{
+    (!(NEWLINE | ";") ~ ANY)+
+}
+
+num_list = {
+    NUMBER ~ ("," ~ NUMBER)*
+}
+
+// ==================
+// Click/interaction
+// ==================
+
+click_stmt = {
+    "click" ~ WHITESPACE+ ~ identifier ~ WHITESPACE+ ~ click_action
+}
+
+click_action = {
+    callback_action | href_action | simple_callback
+}
+
+callback_action = {
+    "call" ~ WHITESPACE+ ~ identifier ~ "(" ~ callback_args? ~ ")" ~ tooltip?
+}
+
+href_action = {
+    "href" ~ WHITESPACE+ ~ quoted_string ~ link_target? ~ tooltip?
+}
+
+simple_callback = {
+    identifier ~ tooltip?
+    | quoted_string ~ link_target? ~ tooltip?
+}
+
+callback_args = @{
+    (!")" ~ ANY)*
+}
+
+link_target = {
+    WHITESPACE+ ~ ("_self" | "_blank" | "_parent" | "_top")
+}
+
+tooltip = {
+    WHITESPACE+ ~ quoted_string
+}
+
+// ==================
+// Subgraphs
+// ==================
+
+subgraph_stmt = {
+    keyword_subgraph ~ WHITESPACE+ ~ subgraph_id ~ WHITESPACE* ~ (NEWLINE | ";") ~ document ~ keyword_end
+}
+
+subgraph_id = {
+    identifier ~ ("[" ~ text ~ "]")?
+    | identifier
+}
+
+// ==================
+// Identifiers
+// ==================
+
+identifier = @{
+    (LETTER | DIGIT | "_" | "-" | "." | ":" | "#" | "*" | "!" | "?" | UNICODE_LETTER)+
+}
+
+identifier_list = {
+    identifier ~ ("," ~ identifier)*
+}
+
+// ==================
+// Primitives
+// ==================
+
+WHITESPACE = _{ " " | "\t" }
+NEWLINE = _{ "\r\n" | "\n" | ";" }
+NUMBER = @{ ASCII_DIGIT+ }
+LETTER = _{ ASCII_ALPHA }
+DIGIT = _{ ASCII_DIGIT }
+UNICODE_LETTER = _{
+    '\u{00AA}'..'\u{00FF}'
+    | '\u{0100}'..'\u{017F}'
+    | '\u{0180}'..'\u{024F}'
+    | '\u{0250}'..'\u{02AF}'
+    | '\u{1E00}'..'\u{1EFF}'
+    | '\u{2C60}'..'\u{2C7F}'
+    | '\u{A720}'..'\u{A7FF}'
+    | '\u{3040}'..'\u{309F}' // Hiragana
+    | '\u{30A0}'..'\u{30FF}' // Katakana
+    | '\u{4E00}'..'\u{9FFF}' // CJK Unified Ideographs
+    | '\u{AC00}'..'\u{D7AF}' // Korean Hangul
+    | '\u{0400}'..'\u{04FF}' // Cyrillic
+    | '\u{0370}'..'\u{03FF}' // Greek
+    | '\u{0590}'..'\u{05FF}' // Hebrew
+    | '\u{0600}'..'\u{06FF}' // Arabic
+}

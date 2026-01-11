@@ -553,8 +553,23 @@ impl FlowchartDb {
         &self.vertices
     }
 
+    /// Get vertices (alias for compatibility with parser)
+    pub fn get_vertices(&self) -> &HashMap<String, FlowVertex> {
+        &self.vertices
+    }
+
+    /// Get a mutable vertex by ID
+    pub fn get_vertex_mut(&mut self, id: &str) -> Option<&mut FlowVertex> {
+        self.vertices.get_mut(id)
+    }
+
     /// Get all edges
     pub fn edges(&self) -> &[FlowEdge] {
+        &self.edges
+    }
+
+    /// Get edges (alias for compatibility with parser)
+    pub fn get_edges(&self) -> &[FlowEdge] {
         &self.edges
     }
 
@@ -566,6 +581,75 @@ impl FlowchartDb {
     /// Get all subgraphs
     pub fn subgraphs(&self) -> &[FlowSubGraph] {
         &self.subgraphs
+    }
+
+    /// Simplified add_vertex for parser - just id, optional text and type
+    pub fn add_vertex_simple(&mut self, id: &str, text: Option<&str>, vertex_type: Option<FlowVertexType>) {
+        let text_obj = text.map(|t| FlowText::new(t));
+        self.add_vertex(id, text_obj, vertex_type, Vec::new(), Vec::new(), None, None);
+    }
+
+    /// Add an edge between two nodes (simplified for parser)
+    pub fn add_edge(&mut self, start: &str, end: &str, _arrow: &str, text: Option<&str>, link_id: Option<&str>) {
+        // Ensure vertices exist
+        if !self.vertices.contains_key(start) {
+            self.add_vertex_simple(start, None, None);
+        }
+        if !self.vertices.contains_key(end) {
+            self.add_vertex_simple(end, None, None);
+        }
+
+        let flow_link = FlowLink {
+            text: text.map(|t| FlowText::new(t)),
+            id: link_id.map(String::from),
+            ..Default::default()
+        };
+
+        self.add_single_link(start, end, Some(&flow_link), link_id);
+    }
+
+    /// Add a subgraph (simplified for parser)
+    pub fn add_subgraph(&mut self, id: &str, title: &str) {
+        self.add_sub_graph(Vec::new(), id, title, "");
+    }
+
+    /// Set link on a vertex (for click handler)
+    pub fn set_link(&mut self, id: &str, link: &str, target: Option<&str>) {
+        if let Some(vertex) = self.vertices.get_mut(id) {
+            vertex.link = Some(link.to_string());
+            vertex.link_target = target.map(String::from);
+        }
+    }
+
+    /// Set click event on a vertex
+    pub fn set_click_event(&mut self, id: &str, callback: &str) {
+        if let Some(vertex) = self.vertices.get_mut(id) {
+            vertex.have_callback = true;
+            // Store callback name (would need additional field)
+        }
+        let _ = callback; // TODO: store callback
+    }
+
+    /// Set tooltip on a vertex
+    pub fn set_tooltip(&mut self, id: &str, tooltip: &str) {
+        self.tooltips.insert(id.to_string(), tooltip.to_string());
+    }
+
+    /// Set default link style
+    pub fn set_default_link_style(&mut self, styles: &[String]) {
+        self.default_style = Some(styles.to_vec());
+    }
+
+    /// Set link style by index
+    pub fn set_link_style(&mut self, idx: usize, styles: &[String]) {
+        if let Some(edge) = self.edges.get_mut(idx) {
+            edge.style = styles.to_vec();
+        }
+    }
+
+    /// Set default link interpolate
+    pub fn set_default_link_interpolate(&mut self, interpolate: &str) {
+        self.default_interpolate = Some(interpolate.to_string());
     }
 
     /// Get data for rendering
