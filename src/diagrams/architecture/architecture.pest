@@ -1,0 +1,159 @@
+// Architecture diagram grammar for mermaid diagrams
+// Based on mermaid.js langium grammar
+
+// ==================
+// Top-level structure
+// ==================
+
+diagram = { SOI ~ leading_content* ~ keyword_architecture ~ document ~ EOI }
+
+// Allow comments and newlines before the keyword
+leading_content = _{ leading_comment | NEWLINE }
+leading_comment = _{ "%%" ~ (!NEWLINE ~ ANY)* ~ NEWLINE? }
+
+keyword_architecture = _{ ^"architecture-beta" }
+
+document = { (NEWLINE | statement)* }
+
+// ==================
+// Statements
+// ==================
+
+statement = {
+    comment_stmt
+    | title_stmt
+    | acc_title_stmt
+    | acc_descr_stmt
+    | acc_descr_multiline_stmt
+    | group_stmt
+    | service_stmt
+    | junction_stmt
+    | edge_stmt
+}
+
+// ==================
+// Comments
+// ==================
+
+comment_stmt = { "%%" ~ (!NEWLINE ~ ANY)* }
+
+// ==================
+// Title and Accessibility
+// ==================
+
+title_stmt = {
+    ^"title" ~ title_text
+}
+
+title_text = @{ (!NEWLINE ~ ANY)* }
+
+acc_title_stmt = {
+    ^"accTitle" ~ ":" ~ acc_title_text
+}
+
+acc_title_text = @{ (!NEWLINE ~ ANY)* }
+
+acc_descr_stmt = {
+    ^"accDescr" ~ ":" ~ acc_descr_text
+}
+
+acc_descr_text = @{ (!NEWLINE ~ ANY)* }
+
+acc_descr_multiline_stmt = {
+    ^"accDescr" ~ "{" ~ acc_descr_multiline_text ~ "}"
+}
+
+acc_descr_multiline_text = @{ (!"}" ~ ANY)* }
+
+// ==================
+// Groups
+// ==================
+
+group_stmt = {
+    ^"group" ~ arch_id ~ arch_icon? ~ arch_title? ~ in_clause?
+}
+
+// ==================
+// Services
+// ==================
+
+service_stmt = {
+    ^"service" ~ arch_id ~ (icon_text | arch_icon)? ~ arch_title? ~ in_clause?
+}
+
+icon_text = @{ "\"" ~ inner_quoted ~ "\"" }
+
+inner_quoted = @{ (!"\"" ~ ANY)* }
+
+// ==================
+// Junctions
+// ==================
+
+junction_stmt = {
+    ^"junction" ~ arch_id ~ in_clause?
+}
+
+// ==================
+// In clause (for nesting)
+// ==================
+
+in_clause = {
+    ^"in" ~ arch_id
+}
+
+// ==================
+// Edges
+// ==================
+
+edge_stmt = {
+    arch_id ~ arrow_group? ~ arrow ~ arch_id ~ arrow_group?
+}
+
+arrow = {
+    left_port ~ arrow_into? ~ arrow_line ~ arrow_into? ~ right_port
+}
+
+left_port = { ":" ~ arrow_direction }
+
+right_port = { arrow_direction ~ ":" }
+
+arrow_direction = { "L" | "R" | "T" | "B" }
+
+arrow_into = { "<" | ">" }
+
+arrow_line = {
+    arrow_line_with_label | arrow_line_simple
+}
+
+arrow_line_simple = @{ "--" }
+
+arrow_line_with_label = {
+    "-" ~ arrow_label ~ "-"
+}
+
+arrow_label = @{ (!"-" ~ ANY)+ }
+
+arrow_group = { "{" ~ ^"group" ~ "}" }
+
+// ==================
+// Common elements
+// ==================
+
+arch_id = @{
+    (ASCII_ALPHANUMERIC | "_") ~ (ASCII_ALPHANUMERIC | "_" | "-")*
+}
+
+arch_icon = @{
+    "(" ~ (ASCII_ALPHANUMERIC | "_" | "-" | ":")+ ~ ")"
+}
+
+arch_title = @{
+    "[" ~ (ASCII_ALPHANUMERIC | " " | "_" | "-")+ ~ "]"
+}
+
+// ==================
+// Whitespace
+// ==================
+
+WHITESPACE = _{ " " | "\t" }
+NEWLINE = _{ "\r\n" | "\n" }
