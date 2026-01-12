@@ -28,8 +28,7 @@ mod tests {
             )
             .unwrap();
 
-            let sections = db.get_sections();
-            assert_eq!(sections.get("ash"), Some(&100.0));
+            assert_eq!(db.get_section("ash"), Some(100.0));
         }
 
         #[test]
@@ -44,9 +43,8 @@ mod tests {
             )
             .unwrap();
 
-            let sections = db.get_sections();
-            assert_eq!(sections.get("ash"), Some(&60.0));
-            assert_eq!(sections.get("bat"), Some(&40.0));
+            assert_eq!(db.get_section("ash"), Some(60.0));
+            assert_eq!(db.get_section("bat"), Some(40.0));
         }
 
         #[test]
@@ -63,9 +61,8 @@ mod tests {
 
             assert!(db.get_show_data());
 
-            let sections = db.get_sections();
-            assert_eq!(sections.get("ash"), Some(&60.0));
-            assert_eq!(sections.get("bat"), Some(&40.0));
+            assert_eq!(db.get_section("ash"), Some(60.0));
+            assert_eq!(db.get_section("bat"), Some(40.0));
         }
 
         #[test]
@@ -81,9 +78,8 @@ mod tests {
             )
             .unwrap();
 
-            let sections = db.get_sections();
-            assert_eq!(sections.get("ash"), Some(&60.0));
-            assert_eq!(sections.get("bat"), Some(&40.0));
+            assert_eq!(db.get_section("ash"), Some(60.0));
+            assert_eq!(db.get_section("bat"), Some(40.0));
         }
 
         #[test]
@@ -100,9 +96,8 @@ mod tests {
 
             assert_eq!(db.get_diagram_title(), Some("a 60/40 pie"));
 
-            let sections = db.get_sections();
-            assert_eq!(sections.get("ash"), Some(&60.0));
-            assert_eq!(sections.get("bat"), Some(&40.0));
+            assert_eq!(db.get_section("ash"), Some(60.0));
+            assert_eq!(db.get_section("bat"), Some(40.0));
         }
 
         #[test]
@@ -121,9 +116,8 @@ mod tests {
             assert_eq!(db.get_diagram_title(), Some("a neat chart"));
             assert_eq!(db.get_acc_title(), Some("a neat acc title"));
 
-            let sections = db.get_sections();
-            assert_eq!(sections.get("ash"), Some(&60.0));
-            assert_eq!(sections.get("bat"), Some(&40.0));
+            assert_eq!(db.get_section("ash"), Some(60.0));
+            assert_eq!(db.get_section("bat"), Some(40.0));
         }
 
         #[test]
@@ -142,9 +136,8 @@ mod tests {
             assert_eq!(db.get_diagram_title(), Some("a neat chart"));
             assert_eq!(db.get_acc_description(), Some("a neat description"));
 
-            let sections = db.get_sections();
-            assert_eq!(sections.get("ash"), Some(&60.0));
-            assert_eq!(sections.get("bat"), Some(&40.0));
+            assert_eq!(db.get_section("ash"), Some(60.0));
+            assert_eq!(db.get_section("bat"), Some(40.0));
         }
 
         #[test]
@@ -169,9 +162,8 @@ mod tests {
                 Some("a neat description\non multiple lines")
             );
 
-            let sections = db.get_sections();
-            assert_eq!(sections.get("ash"), Some(&60.0));
-            assert_eq!(sections.get("bat"), Some(&40.0));
+            assert_eq!(db.get_section("ash"), Some(60.0));
+            assert_eq!(db.get_section("bat"), Some(40.0));
         }
 
         #[test]
@@ -186,9 +178,8 @@ mod tests {
             )
             .unwrap();
 
-            let sections = db.get_sections();
-            assert_eq!(sections.get("ash"), Some(&60.67));
-            assert_eq!(sections.get("bat"), Some(&40.0));
+            assert_eq!(db.get_section("ash"), Some(60.67));
+            assert_eq!(db.get_section("bat"), Some(40.0));
         }
 
         #[test]
@@ -219,9 +210,8 @@ mod tests {
             )
             .unwrap();
 
-            let sections = db.get_sections();
-            assert_eq!(sections.get("dogs"), Some(&0.0));
-            assert_eq!(sections.get("rats"), Some(&40.12));
+            assert_eq!(db.get_section("dogs"), Some(0.0));
+            assert_eq!(db.get_section("rats"), Some(40.12));
         }
 
         #[test]
@@ -257,11 +247,12 @@ mod tests {
             )
             .unwrap();
 
+            // Verify sections contain the unsafe property names
             let sections = db.get_sections();
-            let keys: Vec<&String> = sections.keys().collect();
-            assert!(keys.iter().any(|k| *k == "__proto__"));
-            assert!(keys.iter().any(|k| *k == "constructor"));
-            assert!(keys.iter().any(|k| *k == "prototype"));
+            let labels: Vec<&str> = sections.iter().map(|(l, _)| l.as_str()).collect();
+            assert!(labels.contains(&"__proto__"));
+            assert!(labels.contains(&"constructor"));
+            assert!(labels.contains(&"prototype"));
         }
     }
 

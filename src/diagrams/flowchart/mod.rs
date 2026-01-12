@@ -4,7 +4,10 @@ mod parser;
 mod types;
 
 pub use parser::parse;
-pub use types::{FlowchartDb, FlowClass, FlowEdge, FlowSubGraph, FlowVertex, FlowVertexType};
+pub use types::{
+    Direction, EdgeStroke, FlowchartDb, FlowClass, FlowEdge, FlowSubGraph, FlowText, FlowTextType,
+    FlowVertex, FlowVertexType,
+};
 
 #[cfg(test)]
 mod tests {

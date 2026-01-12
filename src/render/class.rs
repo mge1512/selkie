@@ -1,0 +1,671 @@
+//! Class diagram renderer
+
+use std::collections::HashMap;
+
+use crate::diagrams::class::{ClassDb, ClassNode, LineType};
+use crate::error::Result;
+use crate::render::svg::{Attrs, RenderConfig, SvgDocument, SvgElement};
+
+/// Render a class diagram to SVG
+pub fn render_class(db: &ClassDb, config: &RenderConfig) -> Result<String> {
+    let mut doc = SvgDocument::new();
+
+    // Layout constants
+    let class_width = 180.0;
+    let class_min_height = 60.0;
+    let class_padding = 10.0;
+    let member_height = 18.0;
+    let header_height = 30.0;
+    let class_spacing_x = 60.0;
+    let class_spacing_y = 80.0;
+    let margin = 50.0;
+
+    let classes: Vec<_> = db.classes.values().collect();
+
+    if classes.is_empty() {
+        // Empty diagram
+        doc.set_size(400.0, 200.0);
+        return Ok(doc.to_string());
+    }
+
+    // Calculate class heights and positions
+    let mut class_heights: HashMap<String, f64> = HashMap::new();
+    let mut class_positions: HashMap<String, (f64, f64)> = HashMap::new();
+
+    // Calculate height for each class
+    for class in &classes {
+        let num_members = class.members.len() + class.methods.len();
+        let content_height = (num_members as f64) * member_height;
+        let annotations_height = if class.annotations.is_empty() {
+            0.0
+        } else {
+            (class.annotations.len() as f64) * member_height
+        };
+        let total_height = header_height + annotations_height + content_height + class_padding * 2.0;
+        let height = total_height.max(class_min_height);
+        class_heights.insert(class.id.clone(), height);
+    }
+
+    // Simple grid layout based on direction
+    let is_horizontal = db.direction == "LR" || db.direction == "RL";
+    let cols_per_row = if is_horizontal {
+        classes.len()
+    } else {
+        ((classes.len() as f64).sqrt().ceil() as usize).max(1)
+    };
+
+    let mut max_width = margin;
+    let mut max_height = margin;
+
+    for (i, class) in classes.iter().enumerate() {
+        let row = i / cols_per_row;
+        let col = i % cols_per_row;
+
+        // Calculate row height (max height of classes in this row)
+        let row_start = row * cols_per_row;
+        let row_end = ((row + 1) * cols_per_row).min(classes.len());
+        let row_height: f64 = (row_start..row_end)
+            .map(|j| class_heights.get(&classes[j].id).copied().unwrap_or(class_min_height))
+            .fold(0.0, f64::max);
+
+        let x = margin + (col as f64) * (class_width + class_spacing_x);
+        let y = margin + (row as f64) * (row_height + class_spacing_y);
+
+        class_positions.insert(class.id.clone(), (x, y));
+
+        let height = class_heights.get(&class.id).copied().unwrap_or(class_min_height);
+        max_width = max_width.max(x + class_width + margin);
+        max_height = max_height.max(y + height + margin);
+    }
+
+    doc.set_size(max_width, max_height);
+
+    // Add theme styles
+    if config.embed_css {
+        doc.add_style(&config.theme.generate_css());
+        doc.add_style(&generate_class_css());
+    }
+
+    // Add marker definitions for relations
+    doc.add_defs(vec![
+        create_inheritance_marker(),
+        create_aggregation_marker(),
+        create_composition_marker(),
+        create_dependency_marker(),
+        create_lollipop_marker(),
+    ]);
+
+    // Render each class
+    for class in &classes {
+        if let Some(&(x, y)) = class_positions.get(&class.id) {
+            let height = class_heights.get(&class.id).copied().unwrap_or(class_min_height);
+            let class_elem = render_class_box(class, x, y, class_width, height, class_padding, member_height, header_height);
+            doc.add_element(class_elem);
+        }
+    }
+
+    // Render relations
+    for relation in &db.relations {
+        if let (Some(&(x1, y1)), Some(&(x2, y2))) = (
+            class_positions.get(&relation.id1),
+            class_positions.get(&relation.id2),
+        ) {
+            let h1 = class_heights.get(&relation.id1).copied().unwrap_or(class_min_height);
+            let h2 = class_heights.get(&relation.id2).copied().unwrap_or(class_min_height);
+            let relation_elem = render_relation(
+                x1,
+                y1,
+                h1,
+                x2,
+                y2,
+                h2,
+                class_width,
+                &relation.title,
+                relation.relation.type1,
+                relation.relation.type2,
+                relation.relation.line_type,
+            );
+            doc.add_element(relation_elem);
+        }
+    }
+
+    // Render notes
+    for note in db.notes.values() {
+        if let Some(&(x, y)) = class_positions.get(&note.class) {
+            let note_elem = render_note(x + class_width + 20.0, y, &note.text);
+            doc.add_element(note_elem);
+        }
+    }
+
+    Ok(doc.to_string())
+}
+
+/// Render a class box with name, attributes, and methods
+fn render_class_box(
+    class: &ClassNode,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+    padding: f64,
+    member_height: f64,
+    header_height: f64,
+) -> SvgElement {
+    let mut children = Vec::new();
+
+    // Background rectangle
+    children.push(SvgElement::Rect {
+        x,
+        y,
+        width,
+        height,
+        rx: Some(3.0),
+        ry: Some(3.0),
+        attrs: Attrs::new()
+            .with_fill("#ECECFF")
+            .with_stroke("#333333")
+            .with_stroke_width(1.0)
+            .with_class("class-box"),
+    });
+
+    let mut current_y = y;
+
+    // Annotations (<<interface>>, <<abstract>>, etc.)
+    if !class.annotations.is_empty() {
+        for annotation in &class.annotations {
+            current_y += member_height;
+            children.push(SvgElement::Text {
+                x: x + width / 2.0,
+                y: current_y,
+                content: format!("<<{}>>", annotation),
+                attrs: Attrs::new()
+                    .with_attr("text-anchor", "middle")
+                    .with_class("class-annotation")
+                    .with_attr("font-size", "11")
+                    .with_attr("font-style", "italic"),
+            });
+        }
+    }
+
+    // Class name
+    current_y += header_height / 2.0 + 5.0;
+    let class_label = if !class.label.is_empty() {
+        &class.label
+    } else {
+        &class.id
+    };
+    let type_suffix = if !class.type_param.is_empty() {
+        format!("<{}>", class.type_param)
+    } else {
+        String::new()
+    };
+
+    children.push(SvgElement::Text {
+        x: x + width / 2.0,
+        y: current_y,
+        content: format!("{}{}", class_label, type_suffix),
+        attrs: Attrs::new()
+            .with_attr("text-anchor", "middle")
+            .with_class("class-name")
+            .with_attr("font-size", "14")
+            .with_attr("font-weight", "bold"),
+    });
+
+    current_y = y + header_height;
+
+    // Separator line after name
+    if !class.members.is_empty() || !class.methods.is_empty() {
+        children.push(SvgElement::Line {
+            x1: x,
+            y1: current_y,
+            x2: x + width,
+            y2: current_y,
+            attrs: Attrs::new().with_stroke("#333333").with_stroke_width(1.0),
+        });
+    }
+
+    // Attributes section
+    if !class.members.is_empty() {
+        current_y += padding;
+        for member in &class.members {
+            current_y += member_height;
+            let display = member.get_display_details();
+            let mut text_attrs = Attrs::new()
+                .with_attr("text-anchor", "start")
+                .with_class("class-member")
+                .with_attr("font-size", "12");
+
+            if !display.css_style.is_empty() {
+                if display.css_style.contains("underline") {
+                    text_attrs = text_attrs.with_attr("text-decoration", "underline");
+                }
+                if display.css_style.contains("italic") {
+                    text_attrs = text_attrs.with_attr("font-style", "italic");
+                }
+            }
+
+            children.push(SvgElement::Text {
+                x: x + padding,
+                y: current_y - 4.0,
+                content: display.display_text,
+                attrs: text_attrs,
+            });
+        }
+    }
+
+    // Separator line between attributes and methods
+    if !class.members.is_empty() && !class.methods.is_empty() {
+        current_y += padding / 2.0;
+        children.push(SvgElement::Line {
+            x1: x,
+            y1: current_y,
+            x2: x + width,
+            y2: current_y,
+            attrs: Attrs::new().with_stroke("#333333").with_stroke_width(1.0),
+        });
+    }
+
+    // Methods section
+    if !class.methods.is_empty() {
+        if class.members.is_empty() {
+            current_y += padding;
+        }
+        for method in &class.methods {
+            current_y += member_height;
+            let display = method.get_display_details();
+            let mut text_attrs = Attrs::new()
+                .with_attr("text-anchor", "start")
+                .with_class("class-method")
+                .with_attr("font-size", "12");
+
+            if !display.css_style.is_empty() {
+                if display.css_style.contains("underline") {
+                    text_attrs = text_attrs.with_attr("text-decoration", "underline");
+                }
+                if display.css_style.contains("italic") {
+                    text_attrs = text_attrs.with_attr("font-style", "italic");
+                }
+            }
+
+            children.push(SvgElement::Text {
+                x: x + padding,
+                y: current_y - 4.0,
+                content: display.display_text,
+                attrs: text_attrs,
+            });
+        }
+    }
+
+    SvgElement::Group {
+        children,
+        attrs: Attrs::new()
+            .with_class("class-node")
+            .with_id(&format!("class-{}", class.id)),
+    }
+}
+
+/// Render a relation between two classes
+fn render_relation(
+    x1: f64,
+    y1: f64,
+    h1: f64,
+    x2: f64,
+    y2: f64,
+    h2: f64,
+    class_width: f64,
+    label: &str,
+    type1: i32,
+    type2: i32,
+    line_type: LineType,
+) -> SvgElement {
+    let mut children = Vec::new();
+
+    // Calculate connection points (center of class boxes)
+    let center1_x = x1 + class_width / 2.0;
+    let center1_y = y1 + h1 / 2.0;
+    let center2_x = x2 + class_width / 2.0;
+    let center2_y = y2 + h2 / 2.0;
+
+    // Calculate edge connection points based on relative positions
+    let (start_x, start_y, end_x, end_y) = calculate_connection_points(
+        x1, y1, h1, x2, y2, h2, class_width,
+    );
+
+    // Determine marker based on relation type
+    let marker_start = match type1 {
+        0 => Some("url(#aggregation)"),
+        1 => Some("url(#inheritance)"),
+        2 => Some("url(#composition)"),
+        4 => Some("url(#lollipop)"),
+        _ => None,
+    };
+
+    let marker_end = match type2 {
+        0 => Some("url(#aggregation)"),
+        1 => Some("url(#inheritance)"),
+        2 => Some("url(#composition)"),
+        4 => Some("url(#lollipop)"),
+        _ => None,
+    };
+
+    let mut line_attrs = Attrs::new()
+        .with_stroke("#333333")
+        .with_stroke_width(1.0)
+        .with_fill("none")
+        .with_class("relation-line");
+
+    if line_type == LineType::Dotted {
+        line_attrs = line_attrs.with_stroke_dasharray("5,5");
+    }
+
+    if let Some(marker) = marker_start {
+        line_attrs = line_attrs.with_attr("marker-start", marker);
+    }
+    if let Some(marker) = marker_end {
+        line_attrs = line_attrs.with_attr("marker-end", marker);
+    }
+
+    children.push(SvgElement::Line {
+        x1: start_x,
+        y1: start_y,
+        x2: end_x,
+        y2: end_y,
+        attrs: line_attrs,
+    });
+
+    // Relation label
+    if !label.is_empty() {
+        let mid_x = (start_x + end_x) / 2.0;
+        let mid_y = (start_y + end_y) / 2.0;
+
+        children.push(SvgElement::Text {
+            x: mid_x,
+            y: mid_y - 5.0,
+            content: label.to_string(),
+            attrs: Attrs::new()
+                .with_attr("text-anchor", "middle")
+                .with_class("relation-label")
+                .with_attr("font-size", "11"),
+        });
+    }
+
+    SvgElement::Group {
+        children,
+        attrs: Attrs::new().with_class("relation"),
+    }
+}
+
+/// Calculate connection points on class box edges
+fn calculate_connection_points(
+    x1: f64,
+    y1: f64,
+    h1: f64,
+    x2: f64,
+    y2: f64,
+    h2: f64,
+    width: f64,
+) -> (f64, f64, f64, f64) {
+    let center1_x = x1 + width / 2.0;
+    let center1_y = y1 + h1 / 2.0;
+    let center2_x = x2 + width / 2.0;
+    let center2_y = y2 + h2 / 2.0;
+
+    let dx = center2_x - center1_x;
+    let dy = center2_y - center1_y;
+
+    // Silence unused variable warnings - centers are used for calculating dx/dy
+    let _ = (center1_x, center1_y, center2_x, center2_y);
+
+    // Determine which edges to connect based on relative positions
+    let (start_x, start_y) = if dx.abs() > dy.abs() {
+        // Horizontal connection
+        if dx > 0.0 {
+            (x1 + width, center1_y) // Right edge
+        } else {
+            (x1, center1_y) // Left edge
+        }
+    } else {
+        // Vertical connection
+        if dy > 0.0 {
+            (center1_x, y1 + h1) // Bottom edge
+        } else {
+            (center1_x, y1) // Top edge
+        }
+    };
+
+    let (end_x, end_y) = if dx.abs() > dy.abs() {
+        if dx > 0.0 {
+            (x2, center2_y) // Left edge
+        } else {
+            (x2 + width, center2_y) // Right edge
+        }
+    } else {
+        if dy > 0.0 {
+            (center2_x, y2) // Top edge
+        } else {
+            (center2_x, y2 + h2) // Bottom edge
+        }
+    };
+
+    (start_x, start_y, end_x, end_y)
+}
+
+/// Render a note attached to a class
+fn render_note(x: f64, y: f64, text: &str) -> SvgElement {
+    let note_width = 100.0;
+    let note_height = 40.0;
+    let fold_size = 8.0;
+
+    let mut children = Vec::new();
+
+    // Note box with folded corner
+    let path = format!(
+        "M {} {} L {} {} L {} {} L {} {} L {} {} Z",
+        x,
+        y,
+        x + note_width - fold_size,
+        y,
+        x + note_width,
+        y + fold_size,
+        x + note_width,
+        y + note_height,
+        x,
+        y + note_height
+    );
+
+    children.push(SvgElement::Path {
+        d: path,
+        attrs: Attrs::new()
+            .with_fill("#FFFFCC")
+            .with_stroke("#333333")
+            .with_stroke_width(1.0)
+            .with_class("note-box"),
+    });
+
+    // Fold line
+    let fold_path = format!(
+        "M {} {} L {} {} L {} {}",
+        x + note_width - fold_size,
+        y,
+        x + note_width - fold_size,
+        y + fold_size,
+        x + note_width,
+        y + fold_size
+    );
+
+    children.push(SvgElement::Path {
+        d: fold_path,
+        attrs: Attrs::new()
+            .with_fill("none")
+            .with_stroke("#333333")
+            .with_stroke_width(1.0),
+    });
+
+    // Note text
+    children.push(SvgElement::Text {
+        x: x + note_width / 2.0,
+        y: y + note_height / 2.0 + 4.0,
+        content: text.to_string(),
+        attrs: Attrs::new()
+            .with_attr("text-anchor", "middle")
+            .with_class("note-text")
+            .with_attr("font-size", "11"),
+    });
+
+    SvgElement::Group {
+        children,
+        attrs: Attrs::new().with_class("note"),
+    }
+}
+
+/// Create inheritance marker (hollow triangle - UML extension/inheritance)
+fn create_inheritance_marker() -> SvgElement {
+    SvgElement::Marker {
+        id: "inheritance".to_string(),
+        view_box: "0 0 20 20".to_string(),
+        ref_x: 20.0,
+        ref_y: 10.0,
+        marker_width: 10.0,
+        marker_height: 10.0,
+        orient: "auto".to_string(),
+        marker_units: None,
+        children: vec![SvgElement::Path {
+            d: "M 0 0 L 20 10 L 0 20 z".to_string(),
+            attrs: Attrs::new()
+                .with_fill("#FFFFFF")
+                .with_stroke("#333333")
+                .with_stroke_width(1.0),
+        }],
+    }
+}
+
+/// Create aggregation marker (hollow diamond)
+fn create_aggregation_marker() -> SvgElement {
+    SvgElement::Marker {
+        id: "aggregation".to_string(),
+        view_box: "0 0 20 20".to_string(),
+        ref_x: 20.0,
+        ref_y: 10.0,
+        marker_width: 10.0,
+        marker_height: 10.0,
+        orient: "auto".to_string(),
+        marker_units: None,
+        children: vec![SvgElement::Path {
+            d: "M 0 10 L 10 0 L 20 10 L 10 20 z".to_string(),
+            attrs: Attrs::new()
+                .with_fill("#FFFFFF")
+                .with_stroke("#333333")
+                .with_stroke_width(1.0),
+        }],
+    }
+}
+
+/// Create composition marker (filled diamond)
+fn create_composition_marker() -> SvgElement {
+    SvgElement::Marker {
+        id: "composition".to_string(),
+        view_box: "0 0 20 20".to_string(),
+        ref_x: 20.0,
+        ref_y: 10.0,
+        marker_width: 10.0,
+        marker_height: 10.0,
+        orient: "auto".to_string(),
+        marker_units: None,
+        children: vec![SvgElement::Path {
+            d: "M 0 10 L 10 0 L 20 10 L 10 20 z".to_string(),
+            attrs: Attrs::new()
+                .with_fill("#333333")
+                .with_stroke("#333333")
+                .with_stroke_width(1.0),
+        }],
+    }
+}
+
+/// Create dependency marker (open arrow)
+fn create_dependency_marker() -> SvgElement {
+    SvgElement::Marker {
+        id: "dependency".to_string(),
+        view_box: "0 0 20 20".to_string(),
+        ref_x: 20.0,
+        ref_y: 10.0,
+        marker_width: 10.0,
+        marker_height: 10.0,
+        orient: "auto".to_string(),
+        marker_units: None,
+        children: vec![SvgElement::Path {
+            d: "M 0 0 L 20 10 L 0 20".to_string(),
+            attrs: Attrs::new()
+                .with_fill("none")
+                .with_stroke("#333333")
+                .with_stroke_width(1.0),
+        }],
+    }
+}
+
+/// Create lollipop marker (circle for interface realization)
+fn create_lollipop_marker() -> SvgElement {
+    SvgElement::Marker {
+        id: "lollipop".to_string(),
+        view_box: "0 0 20 20".to_string(),
+        ref_x: 10.0,
+        ref_y: 10.0,
+        marker_width: 10.0,
+        marker_height: 10.0,
+        orient: "auto".to_string(),
+        marker_units: None,
+        children: vec![SvgElement::Circle {
+            cx: 10.0,
+            cy: 10.0,
+            r: 8.0,
+            attrs: Attrs::new()
+                .with_fill("#FFFFFF")
+                .with_stroke("#333333")
+                .with_stroke_width(1.0),
+        }],
+    }
+}
+
+fn generate_class_css() -> String {
+    r#"
+.class-box {
+  fill: #ECECFF;
+  stroke: #333333;
+}
+
+.class-name {
+  fill: #333333;
+  font-weight: bold;
+}
+
+.class-annotation {
+  fill: #666666;
+  font-style: italic;
+}
+
+.class-member {
+  fill: #333333;
+}
+
+.class-method {
+  fill: #333333;
+}
+
+.relation-line {
+  stroke: #333333;
+}
+
+.relation-label {
+  fill: #333333;
+}
+
+.note-box {
+  fill: #FFFFCC;
+  stroke: #333333;
+}
+
+.note-text {
+  fill: #333333;
+}
+"#
+    .to_string()
+}

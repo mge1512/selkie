@@ -1,0 +1,266 @@
+//! Pie chart renderer
+
+use std::f64::consts::PI;
+
+use crate::diagrams::pie::PieDb;
+use crate::error::Result;
+use crate::render::svg::{Attrs, RenderConfig, SvgDocument, SvgElement};
+
+/// Render a pie chart to SVG
+pub fn render_pie(db: &PieDb, config: &RenderConfig) -> Result<String> {
+    let mut doc = SvgDocument::new();
+
+    // Default pie chart dimensions (sized to match mermaid.js)
+    let radius = 185.0;  // mermaid.js uses 185
+    let pie_diameter = radius * 2.0;
+    let pie_width = pie_diameter + 50.0;  // Space for pie + padding
+    let legend_width = 180.0;  // Space for legend
+    let width = pie_width + legend_width;
+    let height = 450.0;  // mermaid.js uses 450
+    let cx = pie_width / 2.0; // center x (in pie area)
+    let cy = height / 2.0; // center y
+
+    doc.set_size(width, height);
+
+    // Add theme styles
+    if config.embed_css {
+        doc.add_style(&config.theme.generate_css());
+        doc.add_style(&generate_pie_css());
+    }
+
+    // Calculate total
+    let sections = db.get_sections();
+    let total: f64 = sections.iter().map(|(_, v)| v).sum();
+
+    if total <= 0.0 {
+        // Empty pie chart - just render the title if present
+        if let Some(title) = db.get_diagram_title() {
+            let title_elem = SvgElement::Text {
+                x: cx,
+                y: 30.0,
+                content: title.to_string(),
+                attrs: Attrs::new()
+                    .with_attr("text-anchor", "middle")
+                    .with_class("pie-title")
+                    .with_attr("font-size", "20")
+                    .with_attr("font-weight", "bold"),
+            };
+            doc.add_element(title_elem);
+        }
+        return Ok(doc.to_string());
+    }
+
+    // Sort sections by value descending (largest first) to match mermaid.js
+    // This places the largest slice at the top, then smaller ones counter-clockwise
+    let mut ordered_sections: Vec<_> = sections.iter().cloned().collect();
+    ordered_sections.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+    // Pie colors (mermaid.js default theme - pastel colors)
+    // These match the default theme from mermaid.js
+    let colors = [
+        "#ECECFF", // Light lavender (pie1)
+        "#ffffde", // Light yellow (pie2)
+        "#b9b9ff", // Medium lavender (pie3)
+        "#b5ff20", // Bright lime (pie4)
+        "#d4ffb2", // Light green (pie5)
+        "#ffb3e6", // Light pink (pie6)
+        "#ffd700", // Gold (pie7)
+        "#c4c4ff", // Soft purple (pie8)
+        "#ffe6cc", // Light peach (pie9)
+        "#ccffcc", // Mint (pie10)
+    ];
+
+    let mut start_angle = -PI / 2.0; // Start at top (12 o'clock)
+
+    // Title offset
+    let title_height = if db.get_diagram_title().is_some() { 40.0 } else { 0.0 };
+    let pie_cy = cy + title_height / 2.0;
+
+    // Legend dimensions (positioned to the right of the pie)
+    let legend_x = pie_width + 10.0;
+    let legend_y = height / 2.0 - 50.0;  // Vertically centered
+    let legend_item_height = 22.0;
+    let legend_box_size = 18.0;  // mermaid.js uses 18x18
+
+    // Render title
+    if let Some(title) = db.get_diagram_title() {
+        let title_elem = SvgElement::Text {
+            x: cx,
+            y: 25.0,
+            content: title.to_string(),
+            attrs: Attrs::new()
+                .with_attr("text-anchor", "middle")
+                .with_class("pie-title")
+                .with_attr("font-size", "20")
+                .with_attr("font-weight", "bold"),
+        };
+        doc.add_element(title_elem);
+    }
+
+    // Render outer circle (pieOuterCircle) - frames the pie chart
+    // mermaid.js uses radius + 1 for the outer circle
+    let outer_circle = SvgElement::Circle {
+        cx,
+        cy: pie_cy,
+        r: radius + 1.0,
+        attrs: Attrs::new()
+            .with_fill("none")
+            .with_stroke("black")
+            .with_stroke_width(2.0)
+            .with_class("pieOuterCircle"),
+    };
+    doc.add_element(outer_circle);
+
+    // Collect legend items while rendering slices
+    let mut legend_items: Vec<(String, String, f64)> = Vec::new(); // (color, label, percentage)
+
+    // Render each slice
+    for (i, (label, value)) in ordered_sections.iter().enumerate() {
+        let percentage = *value / total;
+        let angle = percentage * 2.0 * PI;
+        let end_angle = start_angle + angle;
+
+        // Calculate arc points
+        let x1 = cx + radius * start_angle.cos();
+        let y1 = pie_cy + radius * start_angle.sin();
+        let x2 = cx + radius * end_angle.cos();
+        let y2 = pie_cy + radius * end_angle.sin();
+
+        // Large arc flag (1 if angle > 180 degrees)
+        let large_arc = if angle > PI { 1 } else { 0 };
+
+        // Create pie slice path
+        let path = format!(
+            "M {} {} L {} {} A {} {} 0 {} 1 {} {} Z",
+            cx, pie_cy, // Move to center
+            x1, y1,     // Line to start of arc
+            radius, radius, // Arc radii
+            large_arc,  // Large arc flag
+            x2, y2      // End of arc
+        );
+
+        let color = colors[i % colors.len()];
+        let slice = SvgElement::Path {
+            d: path,
+            attrs: Attrs::new()
+                .with_fill(color)
+                .with_stroke("black")
+                .with_stroke_width(2.0)
+                .with_attr("opacity", "0.7")
+                .with_class("pieCircle"),
+        };
+        doc.add_element(slice);
+
+        // Add percentage label inside slice (for larger slices)
+        if percentage >= 0.05 {  // Only show if slice is at least 5%
+            let mid_angle = start_angle + angle / 2.0;
+            let label_radius = radius * 0.75;  // Position inside slice (mermaid.js uses ~0.75)
+            let label_x = cx + label_radius * mid_angle.cos();
+            let label_y = pie_cy + label_radius * mid_angle.sin();
+
+            let pct_label = SvgElement::Text {
+                x: label_x,
+                y: label_y,
+                content: format!("{}%", (percentage * 100.0).round() as i32),
+                attrs: Attrs::new()
+                    .with_attr("text-anchor", "middle")
+                    .with_attr("dominant-baseline", "middle")
+                    .with_class("slice")
+                    .with_attr("font-size", "17"),
+            };
+            doc.add_element(pct_label);
+        }
+
+        // Store legend item
+        legend_items.push((color.to_string(), label.clone(), percentage));
+
+        start_angle = end_angle;
+    }
+
+    // Render legend
+    let legend_group = render_legend(&legend_items, legend_x, legend_y, legend_item_height, legend_box_size);
+    doc.add_element(legend_group);
+
+    Ok(doc.to_string())
+}
+
+/// Render a legend for the pie chart
+fn render_legend(
+    items: &[(String, String, f64)],  // (color, label, percentage)
+    x: f64,
+    y: f64,
+    item_height: f64,
+    box_size: f64,
+) -> SvgElement {
+    let mut children = Vec::new();
+
+    for (i, (color, label, _percentage)) in items.iter().enumerate() {
+        let item_y = y + (i as f64) * item_height;
+
+        // Colored box with matching stroke (mermaid.js style)
+        children.push(SvgElement::Rect {
+            x,
+            y: item_y,
+            width: box_size,
+            height: box_size,
+            rx: None,
+            ry: None,
+            attrs: Attrs::new()
+                .with_fill(color)
+                .with_stroke(color)
+                .with_class("legend"),
+        });
+
+        // Label text only (no percentage - mermaid.js style)
+        // mermaid.js uses x="22" relative to rect x (i.e., box_size + 4)
+        children.push(SvgElement::Text {
+            x: x + box_size + 4.0,
+            y: item_y + 14.0,  // mermaid.js uses y="14" relative to rect
+            content: label.clone(),
+            attrs: Attrs::new()
+                .with_class("legend")
+                .with_attr("font-size", "17"),
+        });
+    }
+
+    SvgElement::Group {
+        children,
+        attrs: Attrs::new().with_class("legend"),
+    }
+}
+
+fn generate_pie_css() -> String {
+    r#"
+.pieCircle {
+  stroke: black;
+  stroke-width: 2px;
+  opacity: 0.7;
+}
+
+.pieOuterCircle {
+  stroke: black;
+  stroke-width: 2px;
+  fill: none;
+}
+
+.pieTitleText {
+  text-anchor: middle;
+  font-size: 25px;
+  fill: black;
+  font-family: "trebuchet ms", verdana, arial, sans-serif;
+}
+
+.slice {
+  font-family: "trebuchet ms", verdana, arial, sans-serif;
+  fill: #333;
+  font-size: 17px;
+}
+
+.legend text {
+  fill: black;
+  font-family: "trebuchet ms", verdana, arial, sans-serif;
+  font-size: 17px;
+}
+"#
+    .to_string()
+}
