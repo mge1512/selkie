@@ -401,53 +401,35 @@ pub fn assign_node_intersects(graph: &mut DagreGraph) {
         points.push(end_point);
 
         // For edges with only 2 points (no intermediate dummy nodes from normalization),
-        // add control points to create smooth S-curves that exit/enter perpendicular to nodes.
-        // We add: start_extend (perpendicular exit), midpoint (curve bias), end_extend (perpendicular entry)
+        // add a single midpoint to create a simple curve (not S-curve) like mermaid.js.
+        // The midpoint uses the coordinate of whichever node is FURTHER from graph center.
         if points.len() == 2 {
-            // Distance to extend from node boundary for perpendicular exit/entry
-            let extend_dist = 20.0;
-
-            if is_horizontal {
-                // For LR/RL layouts: extend horizontally, curve vertically
+            let mid_point = if is_horizontal {
+                // For LR/RL: use Y of node further from graph center
                 let src_cy = node_v.y.unwrap_or(0.0);
                 let tgt_cy = node_w.y.unwrap_or(0.0);
                 let src_dist = (src_cy - graph_center_y).abs();
                 let tgt_dist = (tgt_cy - graph_center_y).abs();
                 let mid_y = if src_dist >= tgt_dist { start_point.y } else { end_point.y };
 
-                // Determine direction of flow (left-to-right or right-to-left)
-                let going_right = end_point.x > start_point.x;
-                let start_extend_x = if going_right { start_point.x + extend_dist } else { start_point.x - extend_dist };
-                let end_extend_x = if going_right { end_point.x - extend_dist } else { end_point.x + extend_dist };
-
-                let start_extend = super::graph::Point { x: start_extend_x, y: start_point.y };
-                let mid_point = super::graph::Point { x: (start_point.x + end_point.x) / 2.0, y: mid_y };
-                let end_extend = super::graph::Point { x: end_extend_x, y: end_point.y };
-
-                points.insert(1, start_extend);
-                points.insert(2, mid_point);
-                points.insert(3, end_extend);
+                super::graph::Point {
+                    x: (start_point.x + end_point.x) / 2.0,
+                    y: mid_y,
+                }
             } else {
-                // For TB/BT layouts: extend vertically, curve horizontally
+                // For TB/BT: use X of node further from graph center
                 let src_cx = node_v.x.unwrap_or(0.0);
                 let tgt_cx = node_w.x.unwrap_or(0.0);
                 let src_dist = (src_cx - graph_center_x).abs();
                 let tgt_dist = (tgt_cx - graph_center_x).abs();
                 let mid_x = if src_dist >= tgt_dist { start_point.x } else { end_point.x };
 
-                // Determine direction of flow (top-to-bottom or bottom-to-top)
-                let going_down = end_point.y > start_point.y;
-                let start_extend_y = if going_down { start_point.y + extend_dist } else { start_point.y - extend_dist };
-                let end_extend_y = if going_down { end_point.y - extend_dist } else { end_point.y + extend_dist };
-
-                let start_extend = super::graph::Point { x: start_point.x, y: start_extend_y };
-                let mid_point = super::graph::Point { x: mid_x, y: (start_point.y + end_point.y) / 2.0 };
-                let end_extend = super::graph::Point { x: end_point.x, y: end_extend_y };
-
-                points.insert(1, start_extend);
-                points.insert(2, mid_point);
-                points.insert(3, end_extend);
-            }
+                super::graph::Point {
+                    x: mid_x,
+                    y: (start_point.y + end_point.y) / 2.0,
+                }
+            };
+            points.insert(1, mid_point);
         }
 
         // Update edge with new points
