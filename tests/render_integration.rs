@@ -3,6 +3,197 @@
 use mermaid::{parse, render, render_with_config};
 use mermaid::render::{RenderConfig, Theme};
 
+// ============================================================================
+// Output Format Tests (PNG/PDF)
+// ============================================================================
+
+#[cfg(feature = "png")]
+mod png_output_tests {
+    use super::*;
+
+    /// Test that SVG can be converted to valid PNG
+    #[test]
+    fn test_svg_to_png_produces_valid_png() {
+        let input = r#"flowchart LR
+            A[Start] --> B[End]"#;
+
+        let diagram = parse(input).expect("Failed to parse");
+        let svg = render(&diagram).expect("Failed to render");
+
+        // Convert to PNG using resvg
+        use resvg::usvg;
+        use resvg::tiny_skia;
+
+        let mut opt = usvg::Options::default();
+        opt.fontdb_mut().load_system_fonts();
+
+        let tree = usvg::Tree::from_str(&svg, &opt)
+            .expect("Failed to parse SVG");
+
+        let size = tree.size();
+        let mut pixmap = tiny_skia::Pixmap::new(
+            size.width() as u32,
+            size.height() as u32,
+        ).expect("Failed to create pixmap");
+
+        resvg::render(&tree, tiny_skia::Transform::default(), &mut pixmap.as_mut());
+
+        let png_data = pixmap.encode_png().expect("Failed to encode PNG");
+
+        // Verify PNG header (magic bytes)
+        assert!(png_data.starts_with(&[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]),
+            "Output should be valid PNG (check magic bytes)");
+
+        // Should have reasonable size
+        assert!(png_data.len() > 100, "PNG should have content");
+    }
+
+    /// Test that PNG output respects scaling
+    #[test]
+    fn test_png_scaling() {
+        let input = r#"flowchart LR
+            A --> B --> C"#;
+
+        let diagram = parse(input).expect("Failed to parse");
+        let svg = render(&diagram).expect("Failed to render");
+
+        use resvg::usvg;
+        use resvg::tiny_skia;
+
+        let mut opt = usvg::Options::default();
+        opt.fontdb_mut().load_system_fonts();
+
+        let tree = usvg::Tree::from_str(&svg, &opt).expect("Failed to parse SVG");
+
+        // Render at 2x scale
+        let size = tree.size();
+        let scale = 2.0;
+        let width = (size.width() * scale) as u32;
+        let height = (size.height() * scale) as u32;
+
+        let mut pixmap = tiny_skia::Pixmap::new(width, height)
+            .expect("Failed to create pixmap");
+
+        let transform = tiny_skia::Transform::from_scale(scale, scale);
+        resvg::render(&tree, transform, &mut pixmap.as_mut());
+
+        assert_eq!(pixmap.width(), width);
+        assert_eq!(pixmap.height(), height);
+    }
+
+    /// Test PNG output with dark theme
+    #[test]
+    fn test_png_with_dark_theme() {
+        let input = r#"flowchart TB
+            A[Start] --> B{Decision}
+            B -->|Yes| C[End]"#;
+
+        let diagram = parse(input).expect("Failed to parse");
+        let config = RenderConfig {
+            theme: Theme::dark(),
+            ..Default::default()
+        };
+        let svg = render_with_config(&diagram, &config).expect("Failed to render");
+
+        use resvg::usvg;
+        use resvg::tiny_skia;
+
+        let mut opt = usvg::Options::default();
+        opt.fontdb_mut().load_system_fonts();
+
+        let tree = usvg::Tree::from_str(&svg, &opt).expect("Failed to parse SVG");
+
+        let size = tree.size();
+        let mut pixmap = tiny_skia::Pixmap::new(
+            size.width() as u32,
+            size.height() as u32,
+        ).expect("Failed to create pixmap");
+
+        resvg::render(&tree, tiny_skia::Transform::default(), &mut pixmap.as_mut());
+
+        let png_data = pixmap.encode_png().expect("Failed to encode PNG");
+        assert!(png_data.starts_with(&[0x89, 0x50, 0x4E, 0x47]),
+            "Dark theme should produce valid PNG");
+    }
+}
+
+#[cfg(feature = "pdf")]
+mod pdf_output_tests {
+    use super::*;
+
+    /// Test that SVG can be converted to valid PDF
+    #[test]
+    fn test_svg_to_pdf_produces_valid_pdf() {
+        let input = r#"flowchart LR
+            A[Start] --> B[End]"#;
+
+        let diagram = parse(input).expect("Failed to parse");
+        let svg = render(&diagram).expect("Failed to render");
+
+        use resvg::usvg;
+
+        let mut opt = usvg::Options::default();
+        opt.fontdb_mut().load_system_fonts();
+
+        let tree = usvg::Tree::from_str(&svg, &opt)
+            .expect("Failed to parse SVG");
+
+        let pdf_data = svg2pdf::to_pdf(
+            &tree,
+            svg2pdf::ConversionOptions::default(),
+            svg2pdf::PageOptions::default(),
+        ).expect("Failed to convert to PDF");
+
+        // Verify PDF header
+        assert!(pdf_data.starts_with(b"%PDF-"),
+            "Output should be valid PDF (check header)");
+
+        // Should have reasonable size
+        assert!(pdf_data.len() > 100, "PDF should have content");
+    }
+
+    /// Test PDF output with various diagram types
+    #[test]
+    fn test_pdf_with_different_diagrams() {
+        let diagrams = [
+            ("flowchart", r#"flowchart TB
+                A --> B --> C"#),
+            ("pie", r#"pie title Test
+                "A" : 50
+                "B" : 50"#),
+            ("state", r#"stateDiagram-v2
+                [*] --> Active
+                Active --> [*]"#),
+        ];
+
+        for (name, input) in diagrams {
+            let diagram = parse(input).expect(&format!("Failed to parse {}", name));
+            let svg = render(&diagram).expect(&format!("Failed to render {}", name));
+
+            use resvg::usvg;
+
+            let mut opt = usvg::Options::default();
+            opt.fontdb_mut().load_system_fonts();
+
+            let tree = usvg::Tree::from_str(&svg, &opt)
+                .expect(&format!("Failed to parse {} SVG", name));
+
+            let pdf_data = svg2pdf::to_pdf(
+                &tree,
+                svg2pdf::ConversionOptions::default(),
+                svg2pdf::PageOptions::default(),
+            ).expect(&format!("Failed to convert {} to PDF", name));
+
+            assert!(pdf_data.starts_with(b"%PDF-"),
+                "{} should produce valid PDF", name);
+        }
+    }
+}
+
+// ============================================================================
+// Original Integration Tests
+// ============================================================================
+
 #[test]
 fn test_simple_flowchart_renders_to_svg() {
     let input = r#"flowchart LR
