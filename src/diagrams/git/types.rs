@@ -302,6 +302,7 @@ impl GitGraphDb {
     }
 
     /// Check if commit_a is an ancestor of commit_b
+    #[allow(dead_code)]
     fn is_ancestor(&self, commit_a: &str, commit_b: &str) -> bool {
         if commit_a == commit_b {
             return true;

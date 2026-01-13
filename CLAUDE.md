@@ -1,6 +1,6 @@
 Use 'bd' for task tracking
 
-We're going to rename this project to "selkie-rs"
+We're going to rename this project to "selkie"
 
 Follow TDD, Commit when tests are passing
 

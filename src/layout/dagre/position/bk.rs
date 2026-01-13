@@ -170,10 +170,10 @@ fn horizontal_compaction(
     g: &DagreGraph,
     layers: &[Vec<String>],
     root: &HashMap<String, String>,
-    align: &HashMap<String, String>,
+    _align: &HashMap<String, String>,
     nodesep: f64,
     edgesep: f64,
-    reverse_sep: bool,
+    _reverse_sep: bool,
 ) -> HashMap<String, f64> {
     let mut xs: HashMap<String, f64> = HashMap::new();
 

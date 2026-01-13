@@ -14,7 +14,7 @@ pub fn render_sequence(db: &SequenceDb, config: &RenderConfig) -> Result<String>
     let actor_height = 65.0;  // mermaid.js uses 65
     let message_spacing = 44.0;  // mermaid.js uses ~44px
     let margin_top = 10.0;  // Small top margin (viewBox offset handles visual padding)
-    let margin_left = 0.0;  // No left margin (handled by viewBox offset)
+    let _margin_left = 0.0;  // No left margin (handled by viewBox offset)
     let actor_box_padding = 0.0;  // No padding - full width box
 
     // Get actors in order

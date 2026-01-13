@@ -93,6 +93,7 @@ pub fn render_edge(layout_edge: &LayoutEdge, flow_edge: &FlowEdge, _theme: &Them
 }
 
 /// Build SVG path from bend points (straight lines)
+#[allow(dead_code)]
 fn build_path(points: &[crate::layout::Point]) -> String {
     if points.is_empty() {
         return String::new();

@@ -224,7 +224,7 @@ pub fn render_state(db: &StateDb, config: &RenderConfig) -> Result<String> {
 
     // Render transitions
     for relation in db.get_relations() {
-        if let (Some(&(x1, y1, w1, h1)), Some(&(x2, y2, w2, h2))) = (
+        if let (Some(&(x1, y1, w1, h1)), Some(&(x2, y2, _w2, _h2))) = (
             state_positions.get(&relation.state1),
             state_positions.get(&relation.state2),
         ) {
@@ -670,31 +670,6 @@ struct StartEndInfo {
 fn determine_start_end_states(db: &StateDb) -> HashMap<&str, StartEndInfo> {
     let mut result = HashMap::new();
     let relations = db.get_relations();
-
-    // Track occurrences of [*] as source (start) vs target (end)
-    let mut start_count = 0;
-    let mut end_count = 0;
-
-    for relation in relations {
-        // [*] as source -> it's a start state
-        if relation.state1 == "[*]" || relation.state1.starts_with("[*]_start") {
-            let id = if relation.state1 == "[*]" {
-                format!("[*]_start_{}", start_count)
-            } else {
-                relation.state1.clone()
-            };
-            start_count += 1;
-        }
-        // [*] as target -> it's an end state
-        if relation.state2 == "[*]" || relation.state2.starts_with("[*]_end") {
-            let id = if relation.state2 == "[*]" {
-                format!("[*]_end_{}", end_count)
-            } else {
-                relation.state2.clone()
-            };
-            end_count += 1;
-        }
-    }
 
     // Classify states in the states map
     for (id, _state) in db.get_states() {

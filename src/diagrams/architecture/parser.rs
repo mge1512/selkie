@@ -309,7 +309,7 @@ fn process_arrow(
 ) {
     let mut lhs_dir = ArchitectureDirection::Right;
     let mut rhs_dir = ArchitectureDirection::Left;
-    let mut into_count = 0;
+    let mut _into_count = 0;
     let mut lhs_into = false;
     let mut rhs_into = false;
     let mut title: Option<String> = None;
@@ -337,7 +337,7 @@ fn process_arrow(
                 } else {
                     rhs_into = true;
                 }
-                into_count += 1;
+                _into_count += 1;
             }
             Rule::arrow_line => {
                 saw_arrow_line = true;

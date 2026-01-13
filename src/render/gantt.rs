@@ -191,7 +191,7 @@ pub fn render_gantt(db: &mut GanttDb, config: &RenderConfig) -> Result<String> {
             let bar_width = duration * day_width;
 
             // Determine bar color based on flags (mermaid.js default theme colors)
-            let (bar_color, bar_stroke, text_color) = if task.flags.done {
+            let (bar_color, bar_stroke, _text_color) = if task.flags.done {
                 ("#d3d3d3", "#808080", "#000000") // lightgrey/grey for done
             } else if task.flags.critical {
                 ("#ff0000", "#ff8888", "#ffffff") // red for critical
