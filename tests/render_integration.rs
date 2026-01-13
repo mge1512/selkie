@@ -1252,3 +1252,68 @@ fn test_er_diagram_vertical_layout() {
         );
     }
 }
+
+#[test]
+fn test_class_diagram_parent_centered_over_children() {
+    // Parent class should be horizontally centered over its children
+    // Not left-aligned at the margin
+    let input = r#"classDiagram
+    Animal <|-- Duck
+    Animal <|-- Fish
+    Animal <|-- Zebra
+    Animal : +int age
+    Animal: +isMammal()"#;
+
+    let diagram = parse(input).expect("Failed to parse class diagram");
+    let svg = render(&diagram).expect("Failed to render class diagram");
+
+    // Extract x positions of class boxes
+    // Animal should be centered, not left-aligned
+    // The reference has: Animal at x=298, Duck at x=92, Fish at x=298, Zebra at x=488
+    // Children span from ~92 to ~488, so parent should be near middle (~290)
+
+    // Parse Animal's x position
+    let animal_x = svg.find(r#"id="class-Animal""#).and_then(|start| {
+        let remaining = &svg[start..];
+        remaining.find(r#"<rect x=""#).and_then(|rect_start| {
+            let after_x = &remaining[rect_start + 9..];
+            let end = after_x.find('"')?;
+            after_x[..end].parse::<f64>().ok()
+        })
+    }).expect("Could not find Animal class x position");
+
+    // Parse children's x positions
+    let duck_x = svg.find(r#"id="class-Duck""#).and_then(|start| {
+        let remaining = &svg[start..];
+        remaining.find(r#"<rect x=""#).and_then(|rect_start| {
+            let after_x = &remaining[rect_start + 9..];
+            let end = after_x.find('"')?;
+            after_x[..end].parse::<f64>().ok()
+        })
+    }).expect("Could not find Duck class x position");
+
+    let zebra_x = svg.find(r#"id="class-Zebra""#).and_then(|start| {
+        let remaining = &svg[start..];
+        remaining.find(r#"<rect x=""#).and_then(|rect_start| {
+            let after_x = &remaining[rect_start + 9..];
+            let end = after_x.find('"')?;
+            after_x[..end].parse::<f64>().ok()
+        })
+    }).expect("Could not find Zebra class x position");
+
+    // Class width is 180, so we need to account for that when calculating centers
+    let class_width = 180.0;
+    let animal_center = animal_x + class_width / 2.0;
+    let children_center = (duck_x + zebra_x + class_width) / 2.0;
+
+    // Animal should be centered over children (within reasonable tolerance)
+    let tolerance = 50.0;
+    assert!(
+        (animal_center - children_center).abs() < tolerance,
+        "Animal (parent) should be horizontally centered over children. \
+         Animal center={}, children center={}, diff={}. \
+         Animal x={}, Duck x={}, Zebra x={}",
+        animal_center, children_center, (animal_center - children_center).abs(),
+        animal_x, duck_x, zebra_x
+    );
+}

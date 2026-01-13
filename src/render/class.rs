@@ -145,6 +145,7 @@ pub fn render_class(db: &ClassDb, config: &RenderConfig) -> Result<String> {
     }
 
     // Step 4: Position classes in hierarchical layout (parent at top, children below)
+    // Use tree centering algorithm: parents are centered over their children
     let is_horizontal = db.direction == "LR" || db.direction == "RL";
 
     let mut max_width = margin;
@@ -171,32 +172,127 @@ pub fn render_class(db: &ClassDb, config: &RenderConfig) -> Result<String> {
         }
         max_width = current_x + margin;
     } else {
-        // Vertical layout: levels go top-to-bottom (default, like mermaid.js)
+        // Vertical layout with tree centering: parents centered over children
+        // Step 4a: Calculate subtree widths (bottom-up from leaves)
+        let mut subtree_widths: HashMap<String, f64> = HashMap::new();
+
+        // Process levels from bottom to top
+        for level in (0..=max_level).rev() {
+            for class_id in &levels[level] {
+                let children: Vec<_> = children_of.get(class_id)
+                    .map(|c| c.clone())
+                    .unwrap_or_default();
+
+                if children.is_empty() {
+                    // Leaf node: width is just the class width
+                    subtree_widths.insert(class_id.clone(), class_width);
+                } else {
+                    // Parent node: width is sum of children's subtree widths + spacing
+                    let children_width: f64 = children.iter()
+                        .filter_map(|c| subtree_widths.get(c))
+                        .sum();
+                    let spacing = (children.len().saturating_sub(1) as f64) * class_spacing_x;
+                    let total_width = (children_width + spacing).max(class_width);
+                    subtree_widths.insert(class_id.clone(), total_width);
+                }
+            }
+        }
+
+        // Step 4b: Position nodes (top-down), centering parents over children
         let mut current_y = margin;
+
+        // First pass: calculate y positions for each level
+        let mut level_y: Vec<f64> = Vec::new();
         for level in 0..=max_level {
             let level_classes = &levels[level];
             if level_classes.is_empty() {
+                level_y.push(current_y);
                 continue;
             }
 
-            // Calculate level height (max height of classes in this level)
             let level_height: f64 = level_classes
                 .iter()
                 .filter_map(|id| class_heights.get(id).copied())
                 .fold(0.0_f64, f64::max)
                 .max(class_min_height);
 
-            // Center the classes horizontally
-            let start_x = margin;
-            for (i, class_id) in level_classes.iter().enumerate() {
-                let x = start_x + (i as f64) * (class_width + class_spacing_x);
-                class_positions.insert(class_id.clone(), (x, current_y));
-                max_width = max_width.max(x + class_width + margin);
-            }
-
+            level_y.push(current_y);
             current_y += level_height + class_spacing_y;
         }
         max_height = current_y + margin;
+
+        // Second pass: calculate x positions using tree centering
+        // Start with root nodes, position them, then recursively position children
+        fn position_subtree(
+            node_id: &str,
+            start_x: f64,
+            children_of: &HashMap<String, Vec<String>>,
+            class_levels: &HashMap<String, usize>,
+            subtree_widths: &HashMap<String, f64>,
+            level_y: &[f64],
+            class_positions: &mut HashMap<String, (f64, f64)>,
+            class_width: f64,
+            class_spacing_x: f64,
+        ) {
+            let level = *class_levels.get(node_id).unwrap_or(&0);
+            let y = level_y.get(level).copied().unwrap_or(0.0);
+            let subtree_width = subtree_widths.get(node_id).copied().unwrap_or(class_width);
+
+            // Center the node within its subtree width
+            let x = start_x + (subtree_width - class_width) / 2.0;
+            class_positions.insert(node_id.to_string(), (x, y));
+
+            // Position children
+            if let Some(children) = children_of.get(node_id) {
+                let mut child_x = start_x;
+                for child in children {
+                    let child_width = subtree_widths.get(child).copied().unwrap_or(class_width);
+                    position_subtree(
+                        child,
+                        child_x,
+                        children_of,
+                        class_levels,
+                        subtree_widths,
+                        level_y,
+                        class_positions,
+                        class_width,
+                        class_spacing_x,
+                    );
+                    child_x += child_width + class_spacing_x;
+                }
+            }
+        }
+
+        // Position all root nodes (level 0 nodes without parents)
+        let mut root_x = margin;
+        for root_id in &levels[0] {
+            let root_width = subtree_widths.get(root_id).copied().unwrap_or(class_width);
+            position_subtree(
+                root_id,
+                root_x,
+                &children_of,
+                &class_levels,
+                &subtree_widths,
+                &level_y,
+                &mut class_positions,
+                class_width,
+                class_spacing_x,
+            );
+            root_x += root_width + class_spacing_x;
+            max_width = max_width.max(root_x + margin);
+        }
+
+        // Position any orphan nodes (not in any tree) - place them at the end
+        for level in 0..=max_level {
+            for class_id in &levels[level] {
+                if !class_positions.contains_key(class_id) {
+                    let y = level_y.get(level).copied().unwrap_or(0.0);
+                    class_positions.insert(class_id.clone(), (root_x, y));
+                    root_x += class_width + class_spacing_x;
+                    max_width = max_width.max(root_x + margin);
+                }
+            }
+        }
     }
 
     doc.set_size(max_width, max_height);
