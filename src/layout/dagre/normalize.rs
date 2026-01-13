@@ -337,6 +337,12 @@ fn sx_for_sy(dx: f64, dy: f64, sy: f64) -> f64 {
 /// Assign node intersection points to edges
 /// This adds the start and end points where edges meet node boundaries
 pub fn assign_node_intersects(graph: &mut DagreGraph) {
+    // Get graph dimensions and direction for determining edge curvature
+    let graph_center_x = graph.graph().width.unwrap_or(0.0) / 2.0;
+    let graph_center_y = graph.graph().height.unwrap_or(0.0) / 2.0;
+    let rankdir = graph.graph().rankdir.as_str();
+    let is_horizontal = rankdir == "LR" || rankdir == "RL";
+
     // Collect edge data (v, w, points) upfront to avoid borrow issues
     let edge_data: Vec<_> = graph
         .edges()
@@ -384,13 +390,45 @@ pub fn assign_node_intersects(graph: &mut DagreGraph) {
 
         // For edges with only 2 points (no intermediate dummy nodes from normalization),
         // add a midpoint to create the 3-point structure that curveBasis expects.
-        // The midpoint is biased toward the target's position to create natural curves
-        // that approach the target node more directly (matching mermaid.js behavior).
+        // The midpoint should be biased toward the graph center to create natural
+        // converging curves. The bias axis depends on layout direction:
+        // - TB/BT layouts: edges flow vertically, bias mid_x toward center
+        // - LR/RL layouts: edges flow horizontally, bias mid_y toward center
         if points.len() == 2 {
-            // Bias the midpoint toward the target: X uses target's X, Y is midpoint
-            let mid_point = super::graph::Point {
-                x: end_point.x,
-                y: (start_point.y + end_point.y) / 2.0,
+            let mid_point = if is_horizontal {
+                // For LR/RL: bias Y toward graph center
+                let src_cy = node_v.y.unwrap_or(0.0);
+                let tgt_cy = node_w.y.unwrap_or(0.0);
+                let avg_y = (src_cy + tgt_cy) / 2.0;
+
+                // Top-side edges curve down, bottom-side edges curve up
+                let mid_y = if avg_y <= graph_center_y {
+                    start_point.y.max(end_point.y)
+                } else {
+                    start_point.y.min(end_point.y)
+                };
+
+                super::graph::Point {
+                    x: (start_point.x + end_point.x) / 2.0,
+                    y: mid_y,
+                }
+            } else {
+                // For TB/BT: bias X toward graph center
+                let src_cx = node_v.x.unwrap_or(0.0);
+                let tgt_cx = node_w.x.unwrap_or(0.0);
+                let avg_x = (src_cx + tgt_cx) / 2.0;
+
+                // Left-side edges curve right, right-side edges curve left
+                let mid_x = if avg_x <= graph_center_x {
+                    start_point.x.max(end_point.x)
+                } else {
+                    start_point.x.min(end_point.x)
+                };
+
+                super::graph::Point {
+                    x: mid_x,
+                    y: (start_point.y + end_point.y) / 2.0,
+                }
             };
             points.insert(1, mid_point);
         }
