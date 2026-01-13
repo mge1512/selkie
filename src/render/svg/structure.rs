@@ -170,7 +170,8 @@ fn extract_labels(doc: &roxmltree::Document) -> Vec<String> {
 
     for node in doc.descendants() {
         let tag = node.tag_name().name();
-        if tag == "text" || tag == "tspan" {
+        // Check text, tspan (our SVGs) and p, span (mermaid.js uses foreignObject with HTML)
+        if tag == "text" || tag == "tspan" || tag == "p" || tag == "span" {
             if let Some(text) = node.text() {
                 let text = text.trim();
                 if !text.is_empty() && !seen.contains(text) {
