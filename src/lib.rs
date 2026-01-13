@@ -1,6 +1,6 @@
 //! mermaid-rs - A Rust port of mermaid.js
 //!
-//! This library provides parsing and data structures for mermaid diagram syntax.
+//! This library provides parsing, layout, and rendering for mermaid diagram syntax.
 //! It supports multiple diagram types including flowcharts, sequence diagrams,
 //! pie charts, and more.
 
@@ -8,9 +8,12 @@ pub mod common;
 pub mod config;
 pub mod diagrams;
 pub mod error;
+pub mod layout;
+pub mod render;
 
 pub use config::Config;
 pub use error::{MermaidError, Result};
+pub use render::{render, render_with_config, RenderConfig, Theme};
 
 /// Parse a mermaid diagram and return a diagram representation
 pub fn parse(input: &str) -> Result<diagrams::Diagram> {

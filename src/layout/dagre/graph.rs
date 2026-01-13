@@ -7,6 +7,8 @@
 
 use std::collections::{HashMap, HashSet};
 
+use crate::layout::NodeShape;
+
 /// A multigraph with compound node support for dagre layout
 #[derive(Debug, Clone)]
 pub struct DagreGraph {
@@ -29,7 +31,7 @@ pub struct DagreGraph {
 }
 
 /// Key for identifying edges (supports multigraph)
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct EdgeKey {
     pub v: String,
     pub w: String,
@@ -69,6 +71,8 @@ pub struct GraphLabel {
     pub width: Option<f64>,
     /// Computed graph height
     pub height: Option<f64>,
+    /// Tracks first dummy node in each edge chain (for normalize undo)
+    pub dummy_chains: Vec<String>,
 }
 
 /// Label/attributes for a node
@@ -76,6 +80,8 @@ pub struct GraphLabel {
 pub struct NodeLabel {
     pub width: f64,
     pub height: f64,
+    /// Node shape for intersection calculations
+    pub shape: NodeShape,
     /// Computed x coordinate (center)
     pub x: Option<f64>,
     /// Computed y coordinate (center)
@@ -92,6 +98,10 @@ pub struct NodeLabel {
     pub low: Option<i32>,
     pub lim: Option<i32>,
     pub parent: Option<String>,
+    /// Original edge label (for dummy nodes in normalize)
+    pub edge_label: Option<Box<EdgeLabel>>,
+    /// Original edge object (v, w, name) for dummy nodes
+    pub edge_obj: Option<(String, String, Option<String>)>,
 }
 
 /// Label/attributes for an edge
@@ -121,6 +131,8 @@ pub struct EdgeLabel {
     pub forward_name: Option<String>,
     /// For network simplex cut values
     pub cutvalue: Option<i32>,
+    /// Rank where label should be placed (for normalization)
+    pub label_rank: Option<i32>,
 }
 
 impl Default for EdgeLabel {
@@ -138,6 +150,7 @@ impl Default for EdgeLabel {
             reversed: false,
             forward_name: None,
             cutvalue: None,
+            label_rank: None,
         }
     }
 }
@@ -164,6 +177,7 @@ impl DagreGraph {
                 ranker: "network-simplex".to_string(),
                 width: None,
                 height: None,
+                dummy_chains: Vec::new(),
             },
             nodes: HashMap::new(),
             edges: HashMap::new(),
@@ -192,9 +206,11 @@ impl DagreGraph {
 
     // --- Node operations ---
 
-    /// Get all node ids
+    /// Get all node ids (sorted for deterministic iteration order)
     pub fn nodes(&self) -> Vec<&String> {
-        self.nodes.keys().collect()
+        let mut nodes: Vec<&String> = self.nodes.keys().collect();
+        nodes.sort();
+        nodes
     }
 
     /// Get number of nodes
@@ -266,9 +282,11 @@ impl DagreGraph {
 
     // --- Edge operations ---
 
-    /// Get all edges
+    /// Get all edges (sorted for deterministic iteration order)
     pub fn edges(&self) -> Vec<&EdgeKey> {
-        self.edges.keys().collect()
+        let mut edges: Vec<&EdgeKey> = self.edges.keys().collect();
+        edges.sort();
+        edges
     }
 
     /// Get number of edges
@@ -291,6 +309,14 @@ impl DagreGraph {
     pub fn edge(&self, v: &str, w: &str) -> Option<&EdgeLabel> {
         self.edges
             .iter()
+            .find(|(k, _)| k.v == v && k.w == w)
+            .map(|(_, label)| label)
+    }
+
+    /// Get mutable edge label
+    pub fn edge_mut(&mut self, v: &str, w: &str) -> Option<&mut EdgeLabel> {
+        self.edges
+            .iter_mut()
             .find(|(k, _)| k.v == v && k.w == w)
             .map(|(_, label)| label)
     }
@@ -377,51 +403,62 @@ impl DagreGraph {
         }
     }
 
-    /// Get outgoing edges from a node
+    /// Get outgoing edges from a node (sorted for deterministic iteration)
     pub fn out_edges(&self, v: &str) -> Vec<&EdgeKey> {
-        self.out_edges
+        let mut edges: Vec<&EdgeKey> = self.out_edges
             .get(v)
             .map(|edges| edges.iter().collect())
-            .unwrap_or_default()
+            .unwrap_or_default();
+        edges.sort();
+        edges
     }
 
-    /// Get outgoing edges from v to w specifically
+    /// Get outgoing edges from v to w specifically (sorted for deterministic iteration)
     pub fn out_edges_to(&self, v: &str, w: &str) -> Vec<&EdgeKey> {
-        self.out_edges
+        let mut edges: Vec<&EdgeKey> = self.out_edges
             .get(v)
             .map(|edges| edges.iter().filter(|e| e.w == w).collect())
-            .unwrap_or_default()
+            .unwrap_or_default();
+        edges.sort();
+        edges
     }
 
-    /// Get incoming edges to a node
+    /// Get incoming edges to a node (sorted for deterministic iteration)
     pub fn in_edges(&self, w: &str) -> Vec<&EdgeKey> {
-        self.in_edges
+        let mut edges: Vec<&EdgeKey> = self.in_edges
             .get(w)
             .map(|edges| edges.iter().collect())
-            .unwrap_or_default()
+            .unwrap_or_default();
+        edges.sort();
+        edges
     }
 
-    /// Get predecessor nodes
+    /// Get predecessor nodes (sorted for deterministic iteration)
     pub fn predecessors(&self, v: &str) -> Vec<&String> {
-        self.in_edges
+        let mut preds: Vec<&String> = self.in_edges
             .get(v)
             .map(|edges| edges.iter().map(|e| &e.v).collect())
-            .unwrap_or_default()
+            .unwrap_or_default();
+        preds.sort();
+        preds
     }
 
-    /// Get successor nodes
+    /// Get successor nodes (sorted for deterministic iteration)
     pub fn successors(&self, v: &str) -> Vec<&String> {
-        self.out_edges
+        let mut succs: Vec<&String> = self.out_edges
             .get(v)
             .map(|edges| edges.iter().map(|e| &e.w).collect())
-            .unwrap_or_default()
+            .unwrap_or_default();
+        succs.sort();
+        succs
     }
 
-    /// Get neighbor nodes (predecessors + successors)
+    /// Get neighbor nodes (predecessors + successors, sorted for deterministic iteration)
     pub fn neighbors(&self, v: &str) -> Vec<&String> {
         let mut result: Vec<&String> = Vec::new();
         result.extend(self.predecessors(v));
         result.extend(self.successors(v));
+        result.sort();
         result
     }
 
@@ -469,12 +506,14 @@ impl DagreGraph {
         self.parent.get(v)
     }
 
-    /// Get children of a node
+    /// Get children of a node (sorted for deterministic iteration)
     pub fn children(&self, v: &str) -> Vec<&String> {
-        self.children
+        let mut children: Vec<&String> = self.children
             .get(v)
             .map(|c| c.iter().collect())
-            .unwrap_or_default()
+            .unwrap_or_default();
+        children.sort();
+        children
     }
 
     // --- Utility ---

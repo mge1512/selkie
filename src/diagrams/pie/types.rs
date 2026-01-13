@@ -1,7 +1,5 @@
 //! Pie chart types
 
-use std::collections::HashMap;
-
 use crate::common::CommonDb;
 
 /// Configuration for pie charts
@@ -22,8 +20,8 @@ impl Default for PieConfig {
 pub struct PieDb {
     /// Common diagram fields (title, accessibility)
     common: CommonDb,
-    /// Pie chart sections (label -> value)
-    sections: HashMap<String, f64>,
+    /// Pie chart sections in declaration order (label, value)
+    sections: Vec<(String, f64)>,
     /// Whether to show data values
     show_data: bool,
     /// Pie chart configuration
@@ -41,7 +39,7 @@ impl PieDb {
     pub fn new() -> Self {
         Self {
             common: CommonDb::new(),
-            sections: HashMap::new(),
+            sections: Vec::new(),
             show_data: false,
             config: PieConfig::default(),
         }
@@ -66,16 +64,24 @@ impl PieDb {
             });
         }
 
-        if !self.sections.contains_key(&label) {
-            self.sections.insert(label, value);
+        // Only add if label doesn't already exist (preserve first occurrence)
+        if !self.sections.iter().any(|(l, _)| l == &label) {
+            self.sections.push((label, value));
         }
 
         Ok(())
     }
 
-    /// Get all sections
-    pub fn get_sections(&self) -> &HashMap<String, f64> {
+    /// Get all sections in declaration order
+    pub fn get_sections(&self) -> &[(String, f64)] {
         &self.sections
+    }
+
+    /// Get a section value by label
+    pub fn get_section(&self, label: &str) -> Option<f64> {
+        self.sections.iter()
+            .find(|(l, _)| l == label)
+            .map(|(_, v)| *v)
     }
 
     /// Set whether to show data values

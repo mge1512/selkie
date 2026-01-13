@@ -103,7 +103,7 @@ impl Theme {
 .edge-path {{
   fill: none;
   stroke: {line_color};
-  stroke-width: 2px;
+  stroke-width: 1px;
 }}
 
 .edge-label {{
@@ -124,6 +124,21 @@ impl Theme {
 
 .subgraph-title {{
   fill: {primary_text_color};
+  font-weight: bold;
+}}
+
+.cluster rect {{
+  fill: {tertiary_color};
+  stroke: {primary_border_color};
+  stroke-width: 1px;
+  rx: 5px;
+  ry: 5px;
+}}
+
+.cluster-label {{
+  fill: {primary_text_color};
+  font-family: {font_family};
+  font-size: {font_size};
   font-weight: bold;
 }}
 

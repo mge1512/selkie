@@ -22,7 +22,7 @@ pub fn render_edge(layout_edge: &LayoutEdge, flow_edge: &FlowEdge, _theme: &Them
         // Apply stroke style
         match flow_edge.stroke {
             EdgeStroke::Normal => {
-                attrs = attrs.with_stroke_width(2.0);
+                attrs = attrs.with_stroke_width(1.0);  // mermaid.js uses 1px
             }
             EdgeStroke::Thick => {
                 attrs = attrs.with_stroke_width(3.5);
@@ -111,56 +111,102 @@ fn build_path(points: &[crate::layout::Point]) -> String {
     d
 }
 
-/// Build curved SVG path from bend points using quadratic bezier curves
-/// This creates smooth curves at corners like mermaid.js's curveBasis
+/// Build curved SVG path from bend points using basis spline interpolation
+/// This matches d3's curveBasis for smooth curves like mermaid.js
 fn build_curved_path(points: &[crate::layout::Point]) -> String {
     if points.is_empty() {
         return String::new();
     }
 
-    if points.len() < 3 {
-        // With fewer than 3 points, just use a straight line
-        return build_path(points);
+    if points.len() == 1 {
+        return format!("M {} {}", points[0].x, points[0].y);
+    }
+
+    if points.len() == 2 {
+        // For 2 points, use a straight line
+        return format!("M {} {} L {} {}", points[0].x, points[0].y, points[1].x, points[1].y);
+    }
+
+    // Use basis spline interpolation (like d3's curveBasis)
+    // This creates smooth curves through the control points
+    build_basis_path(points)
+}
+
+/// Build a basis spline path (B-spline) through the given points
+/// This is equivalent to d3's curveBasis interpolation
+fn build_basis_path(points: &[crate::layout::Point]) -> String {
+    let n = points.len();
+    if n < 2 {
+        return String::new();
     }
 
     let mut d = String::new();
 
-    // Move to first point
-    d.push_str(&format!("M {} {}", points[0].x, points[0].y));
+    // For basis splines, we need to handle the start and end specially
+    // The curve passes near (but not necessarily through) interior points
 
-    // For each corner point, use a quadratic bezier curve
-    // The corner becomes the control point, and we curve through it
-    for i in 1..points.len() - 1 {
-        let prev = &points[i - 1];
-        let curr = &points[i];
-        let next = &points[i + 1];
+    // Move to the starting point
+    d.push_str(&format!("M {:.2} {:.2}", points[0].x, points[0].y));
 
-        // Line to a point before the corner
-        let t = 0.5; // How far to extend before curving
-        let pre_corner_x = prev.x + (curr.x - prev.x) * t;
-        let pre_corner_y = prev.y + (curr.y - prev.y) * t;
-
-        // Use quadratic bezier: corner as control point, midway to next as end
-        let post_corner_x = curr.x + (next.x - curr.x) * (1.0 - t);
-        let post_corner_y = curr.y + (next.y - curr.y) * (1.0 - t);
-
-        if i == 1 {
-            // First segment: line from start to pre-corner
-            d.push_str(&format!(" L {} {}", pre_corner_x, pre_corner_y));
-        }
-
-        // Quadratic bezier curve around the corner
-        d.push_str(&format!(
-            " Q {} {} {} {}",
-            curr.x, curr.y, post_corner_x, post_corner_y
-        ));
-
-        // Note: next corner transitions are handled in the next iteration
+    if n == 2 {
+        // Just two points - straight line
+        d.push_str(&format!(" L {:.2} {:.2}", points[1].x, points[1].y));
+        return d;
     }
 
-    // Line to the last point
-    let last = points.last().unwrap();
-    d.push_str(&format!(" L {} {}", last.x, last.y));
+    if n == 3 {
+        // Three points - single quadratic curve
+        let x1 = (2.0 * points[0].x + points[1].x) / 3.0;
+        let y1 = (2.0 * points[0].y + points[1].y) / 3.0;
+        let x2 = (points[0].x + 2.0 * points[1].x) / 3.0;
+        let y2 = (points[0].y + 2.0 * points[1].y) / 3.0;
+        let x3 = (points[0].x + 4.0 * points[1].x + points[2].x) / 6.0;
+        let y3 = (points[0].y + 4.0 * points[1].y + points[2].y) / 6.0;
+        d.push_str(&format!(" C {:.2} {:.2}, {:.2} {:.2}, {:.2} {:.2}", x1, y1, x2, y2, x3, y3));
+
+        // Finish to end point
+        let x4 = (2.0 * points[1].x + points[2].x) / 3.0;
+        let y4 = (2.0 * points[1].y + points[2].y) / 3.0;
+        let x5 = (points[1].x + 2.0 * points[2].x) / 3.0;
+        let y5 = (points[1].y + 2.0 * points[2].y) / 3.0;
+        d.push_str(&format!(" C {:.2} {:.2}, {:.2} {:.2}, {:.2} {:.2}", x4, y4, x5, y5, points[2].x, points[2].y));
+        return d;
+    }
+
+    // For 4+ points, use full basis spline
+    // First segment (quadratic start)
+    let x1 = (2.0 * points[0].x + points[1].x) / 3.0;
+    let y1 = (2.0 * points[0].y + points[1].y) / 3.0;
+    let x2 = (points[0].x + 2.0 * points[1].x) / 3.0;
+    let y2 = (points[0].y + 2.0 * points[1].y) / 3.0;
+    let x3 = (points[0].x + 4.0 * points[1].x + points[2].x) / 6.0;
+    let y3 = (points[0].y + 4.0 * points[1].y + points[2].y) / 6.0;
+    d.push_str(&format!(" C {:.2} {:.2}, {:.2} {:.2}, {:.2} {:.2}", x1, y1, x2, y2, x3, y3));
+
+    // Middle segments (cubic)
+    for i in 2..n - 1 {
+        let p0 = &points[i - 2];
+        let p1 = &points[i - 1];
+        let p2 = &points[i];
+        let p3 = if i + 1 < n { &points[i + 1] } else { p2 };
+
+        let x1 = (p0.x + 4.0 * p1.x + p2.x) / 6.0 + (p2.x - p0.x) / 6.0;
+        let y1 = (p0.y + 4.0 * p1.y + p2.y) / 6.0 + (p2.y - p0.y) / 6.0;
+        let x2 = (p1.x + 4.0 * p2.x + p3.x) / 6.0 - (p3.x - p1.x) / 6.0;
+        let y2 = (p1.y + 4.0 * p2.y + p3.y) / 6.0 - (p3.y - p1.y) / 6.0;
+        let x3 = (p1.x + 4.0 * p2.x + p3.x) / 6.0;
+        let y3 = (p1.y + 4.0 * p2.y + p3.y) / 6.0;
+
+        d.push_str(&format!(" C {:.2} {:.2}, {:.2} {:.2}, {:.2} {:.2}", x1, y1, x2, y2, x3, y3));
+    }
+
+    // Last segment (end at final point)
+    let p_last = &points[n - 1];
+    let p_prev = &points[n - 2];
+    let x1 = (p_prev.x + 2.0 * p_last.x) / 3.0;
+    let y1 = (p_prev.y + 2.0 * p_last.y) / 3.0;
+    d.push_str(&format!(" C {:.2} {:.2}, {:.2} {:.2}, {:.2} {:.2}",
+                       x1, y1, p_last.x, p_last.y, p_last.x, p_last.y));
 
     d
 }

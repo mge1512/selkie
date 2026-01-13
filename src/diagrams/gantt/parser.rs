@@ -3,7 +3,7 @@
 use pest::Parser;
 use pest_derive::Parser;
 
-use super::types::{GanttDb, WeekendStart};
+use super::types::GanttDb;
 
 #[derive(Parser)]
 #[grammar = "diagrams/gantt/gantt.pest"]
@@ -276,7 +276,7 @@ mod tests {
         fn should_parse_diagram_with_date_format() {
             let result = parse("gantt\ndateFormat YYYY-MM-DD");
             assert!(result.is_ok());
-            let mut db = result.unwrap();
+            let db = result.unwrap();
             assert_eq!(db.get_date_format(), "YYYY-MM-DD");
         }
 
@@ -284,7 +284,7 @@ mod tests {
         fn should_parse_diagram_with_axis_format() {
             let result = parse("gantt\naxisFormat %Y-%m-%d");
             assert!(result.is_ok());
-            let mut db = result.unwrap();
+            let db = result.unwrap();
             assert_eq!(db.get_axis_format(), "%Y-%m-%d");
         }
 
@@ -292,7 +292,7 @@ mod tests {
         fn should_parse_inclusive_end_dates() {
             let result = parse("gantt\ninclusiveEndDates");
             assert!(result.is_ok());
-            let mut db = result.unwrap();
+            let db = result.unwrap();
             assert!(db.end_dates_are_inclusive());
         }
 
@@ -318,13 +318,14 @@ mod tests {
         fn should_parse_today_marker() {
             let result = parse("gantt\ntodayMarker off");
             assert!(result.is_ok());
-            let mut db = result.unwrap();
+            let db = result.unwrap();
             assert_eq!(db.get_today_marker(), "off");
         }
     }
 
     mod weekday_weekend {
         use super::*;
+        use crate::diagrams::gantt::WeekendStart;
 
         #[test]
         fn should_parse_weekday_monday() {
@@ -336,7 +337,7 @@ mod tests {
         fn should_parse_weekend_friday() {
             let result = parse("gantt\nweekend friday");
             assert!(result.is_ok());
-            let mut db = result.unwrap();
+            let db = result.unwrap();
             assert_eq!(db.get_weekend(), WeekendStart::Friday);
         }
 
@@ -344,7 +345,7 @@ mod tests {
         fn should_parse_weekend_saturday() {
             let result = parse("gantt\nweekend saturday");
             assert!(result.is_ok());
-            let mut db = result.unwrap();
+            let db = result.unwrap();
             assert_eq!(db.get_weekend(), WeekendStart::Saturday);
         }
     }
@@ -356,7 +357,7 @@ mod tests {
         fn should_parse_title() {
             let result = parse("gantt\ntitle My Gantt Chart");
             assert!(result.is_ok());
-            let mut db = result.unwrap();
+            let db = result.unwrap();
             assert_eq!(db.get_diagram_title(), "My Gantt Chart");
         }
 
@@ -364,7 +365,7 @@ mod tests {
         fn should_parse_acc_title() {
             let result = parse("gantt\naccTitle: Accessibility Title");
             assert!(result.is_ok());
-            let mut db = result.unwrap();
+            let db = result.unwrap();
             assert_eq!(db.get_acc_title(), "Accessibility Title");
         }
 
@@ -372,7 +373,7 @@ mod tests {
         fn should_parse_acc_descr() {
             let result = parse("gantt\naccDescr: Accessibility Description");
             assert!(result.is_ok());
-            let mut db = result.unwrap();
+            let db = result.unwrap();
             assert_eq!(db.get_acc_description(), "Accessibility Description");
         }
 
@@ -380,7 +381,7 @@ mod tests {
         fn should_parse_multiline_acc_descr() {
             let result = parse("gantt\naccDescr {\nLine 1\nLine 2\n}");
             assert!(result.is_ok());
-            let mut db = result.unwrap();
+            let db = result.unwrap();
             assert!(db.get_acc_description().contains("Line 1"));
         }
     }
@@ -392,7 +393,7 @@ mod tests {
         fn should_parse_section() {
             let result = parse("gantt\nsection Planning");
             assert!(result.is_ok());
-            let mut db = result.unwrap();
+            let db = result.unwrap();
             assert_eq!(db.get_sections(), vec!["Planning"]);
         }
 
@@ -400,7 +401,7 @@ mod tests {
         fn should_parse_multiple_sections() {
             let result = parse("gantt\nsection Planning\nsection Development\nsection Testing");
             assert!(result.is_ok());
-            let mut db = result.unwrap();
+            let db = result.unwrap();
             assert_eq!(db.get_sections(), vec!["Planning", "Development", "Testing"]);
         }
     }

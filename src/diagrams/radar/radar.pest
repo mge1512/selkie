@@ -109,10 +109,14 @@ curve_label_text = @{ "\"" ~ inner_curve_quoted ~ "\"" | (!"]" ~ ANY)+ }
 inner_curve_quoted = @{ (!"\"" ~ ANY)* }
 
 // Entries can be simple numbers or detailed (axis: value) pairs
+// Allow newlines within the entries block (leading and trailing)
 entries = {
-    detailed_entry ~ ("," ~ detailed_entry)*
-    | number_entry ~ ("," ~ number_entry)*
+    entry_newline* ~ (detailed_entry ~ (entry_sep ~ detailed_entry)*) ~ entry_newline*
+    | entry_newline* ~ (number_entry ~ (entry_sep ~ number_entry)*) ~ entry_newline*
 }
+
+entry_sep = _{ "," ~ entry_newline* }
+entry_newline = _{ "\r\n" | "\n" }
 
 detailed_entry = {
     entry_axis ~ ":"? ~ entry_value

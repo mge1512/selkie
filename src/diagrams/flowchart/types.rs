@@ -689,6 +689,11 @@ impl FlowchartDb {
         self.add_sub_graph(Vec::new(), id, title, "");
     }
 
+    /// Add a subgraph with member nodes
+    pub fn add_subgraph_with_nodes(&mut self, id: &str, title: &str, nodes: Vec<String>) {
+        self.add_sub_graph(nodes, id, title, "");
+    }
+
     /// Set link on a vertex (for click handler)
     pub fn set_link(&mut self, id: &str, link: &str, target: Option<&str>) {
         if let Some(vertex) = self.vertices.get_mut(id) {

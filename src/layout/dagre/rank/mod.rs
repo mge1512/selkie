@@ -109,4 +109,29 @@ mod tests {
         assert_eq!(g.node("f").unwrap().rank, Some(1));
         assert_eq!(g.node("g").unwrap().rank, Some(2));
     }
+
+    #[test]
+    fn test_flowchart_diamond_structure() {
+        // This replicates the failing case from flowchart rendering:
+        // A -> B -> C -> D, C -> E, D -> F, E -> F
+        // Expected: A(0) -> B(1) -> C(2) -> D,E(3) -> F(4)
+        let mut g = DagreGraph::new();
+        g.set_path(&["A", "B", "C", "D", "F"]);
+        g.set_edge("C", "E", EdgeLabel::default());
+        g.set_edge("E", "F", EdgeLabel::default());
+
+        assign_ranks(&mut g, Ranker::LongestPath);
+
+        eprintln!("Ranks:");
+        for v in ["A", "B", "C", "D", "E", "F"] {
+            eprintln!("  {}: {:?}", v, g.node(v).unwrap().rank);
+        }
+
+        assert_eq!(g.node("A").unwrap().rank, Some(0), "A should be rank 0");
+        assert_eq!(g.node("B").unwrap().rank, Some(1), "B should be rank 1");
+        assert_eq!(g.node("C").unwrap().rank, Some(2), "C should be rank 2");
+        assert_eq!(g.node("D").unwrap().rank, Some(3), "D should be rank 3");
+        assert_eq!(g.node("E").unwrap().rank, Some(3), "E should be rank 3");
+        assert_eq!(g.node("F").unwrap().rank, Some(4), "F should be rank 4");
+    }
 }

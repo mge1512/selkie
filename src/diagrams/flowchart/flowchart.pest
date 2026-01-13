@@ -120,10 +120,12 @@ shape_diamond = { "{" ~ text ~ "}" }
 shape_hexagon = { "{{" ~ text ~ "}}" }
 shape_ellipse = { "(-" ~ text ~ "-)" }
 shape_odd = { ">" ~ text ~ "]" }
-shape_trapezoid = { "[/" ~ text ~ "\\]" }
-shape_inv_trapezoid = { "[\\" ~ text ~ "/]" }
-shape_lean_right = { "[/" ~ text ~ "/]" }
-shape_lean_left = { "[\\" ~ text ~ "\\]" }
+// Parallelogram shapes need specialized text rules to avoid greedy matching
+// of their end delimiters
+shape_trapezoid = { "[/" ~ text_to_backslash_bracket ~ "\\]" }
+shape_inv_trapezoid = { "[\\" ~ text_to_slash_bracket ~ "/]" }
+shape_lean_right = { "[/" ~ text_to_slash_bracket ~ "/]" }
+shape_lean_left = { "[\\" ~ text_to_backslash_bracket ~ "\\]" }
 
 // ==================
 // Links/edges
@@ -189,6 +191,24 @@ md_content = @{ (!"`\"" ~ ANY)* }
 
 plain_text = @{
     (!("]" | ")" | "}" | "|" | NEWLINE) ~ ANY)+
+}
+
+// Specialized text for shapes ending with /]
+text_to_slash_bracket = {
+    md_string | quoted_string | plain_text_to_slash_bracket
+}
+
+plain_text_to_slash_bracket = @{
+    (!("/]" | "]" | ")" | "}" | "|" | NEWLINE) ~ ANY)+
+}
+
+// Specialized text for shapes ending with \]
+text_to_backslash_bracket = {
+    md_string | quoted_string | plain_text_to_backslash_bracket
+}
+
+plain_text_to_backslash_bracket = @{
+    (!(("\\]") | "]" | ")" | "}" | "|" | NEWLINE) ~ ANY)+
 }
 
 // ==================

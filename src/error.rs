@@ -19,6 +19,24 @@ pub enum MermaidError {
 
     #[error("Validation error: {0}")]
     ValidationError(String),
+
+    #[error("Layout error: {0}")]
+    LayoutError(String),
+
+    #[error("Render error: {0}")]
+    RenderError(String),
+}
+
+impl From<String> for MermaidError {
+    fn from(s: String) -> Self {
+        MermaidError::ParseError(s)
+    }
+}
+
+impl From<Box<dyn std::error::Error>> for MermaidError {
+    fn from(e: Box<dyn std::error::Error>) -> Self {
+        MermaidError::ParseError(e.to_string())
+    }
 }
 
 /// Result type alias for mermaid operations

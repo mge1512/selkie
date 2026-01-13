@@ -79,13 +79,18 @@ impl SpanningTree {
     }
 
     pub fn nodes(&self) -> Vec<&String> {
-        self.nodes.keys().collect()
+        let mut nodes: Vec<&String> = self.nodes.keys().collect();
+        nodes.sort();
+        nodes
     }
 
     pub fn edges_list(&self) -> Vec<(&str, &str)> {
         let mut seen = HashSet::new();
         let mut result = Vec::new();
-        for (v, w) in self.edges.keys() {
+        // Sort edge keys for deterministic iteration
+        let mut edge_keys: Vec<&(String, String)> = self.edges.keys().collect();
+        edge_keys.sort();
+        for (v, w) in edge_keys {
             if !seen.contains(&(w.as_str(), v.as_str())) {
                 result.push((v.as_str(), w.as_str()));
                 seen.insert((v.as_str(), w.as_str()));
@@ -96,11 +101,13 @@ impl SpanningTree {
 
     /// Get neighbors of a node in the tree
     pub fn neighbors(&self, v: &str) -> Vec<String> {
-        self.edges
+        let mut neighbors: Vec<String> = self.edges
             .keys()
             .filter(|(a, _)| a == v)
             .map(|(_, b)| b.clone())
-            .collect()
+            .collect();
+        neighbors.sort();
+        neighbors
     }
 }
 

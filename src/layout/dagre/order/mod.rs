@@ -75,11 +75,22 @@ pub fn order(g: &mut DagreGraph) {
 /// Down sweep: for each layer (top to bottom), order nodes by barycenter of predecessors
 fn sweep_down(g: &mut DagreGraph, max_rank: usize, bias_right: bool) {
     for rank in 1..=max_rank {
-        let layer: Vec<String> = g.nodes()
+        // Collect nodes and sort by current order to preserve stable ordering
+        let mut layer: Vec<(String, usize)> = g.nodes()
             .iter()
-            .filter(|v| g.node(v).and_then(|n| n.rank) == Some(rank as i32))
-            .map(|v| (*v).clone())
+            .filter_map(|v| {
+                let node = g.node(v)?;
+                if node.rank == Some(rank as i32) {
+                    Some(((*v).clone(), node.order.unwrap_or(usize::MAX)))
+                } else {
+                    None
+                }
+            })
             .collect();
+
+        // Sort by current order to ensure stable input to barycenter/sort
+        layer.sort_by_key(|(_, order)| *order);
+        let layer: Vec<String> = layer.into_iter().map(|(v, _)| v).collect();
 
         let entries = barycenter(g, &layer);
         let sorted = sort(entries, bias_right);
@@ -96,11 +107,22 @@ fn sweep_down(g: &mut DagreGraph, max_rank: usize, bias_right: bool) {
 /// Up sweep: for each layer (bottom to top), order nodes by barycenter of successors
 fn sweep_up(g: &mut DagreGraph, max_rank: usize, bias_right: bool) {
     for rank in (0..max_rank).rev() {
-        let layer: Vec<String> = g.nodes()
+        // Collect nodes and sort by current order to preserve stable ordering
+        let mut layer: Vec<(String, usize)> = g.nodes()
             .iter()
-            .filter(|v| g.node(v).and_then(|n| n.rank) == Some(rank as i32))
-            .map(|v| (*v).clone())
+            .filter_map(|v| {
+                let node = g.node(v)?;
+                if node.rank == Some(rank as i32) {
+                    Some(((*v).clone(), node.order.unwrap_or(usize::MAX)))
+                } else {
+                    None
+                }
+            })
             .collect();
+
+        // Sort by current order to ensure stable input to barycenter/sort
+        layer.sort_by_key(|(_, order)| *order);
+        let layer: Vec<String> = layer.into_iter().map(|(v, _)| v).collect();
 
         let entries = barycenter_down(g, &layer);
         let sorted = sort(entries, bias_right);
@@ -224,5 +246,37 @@ mod tests {
 
         // After ordering, crossings should be reduced (ideally to 0)
         assert!(final_crossings <= initial_crossings);
+    }
+
+    #[test]
+    fn test_order_decision_branches_preserve_edge_order() {
+        // Simulates the flowchart:
+        //   B -->|Yes| C[Action 1]
+        //   B -->|No| D[Action 2]
+        //
+        // In mermaid.js, the first edge's target (C) appears ABOVE
+        // the second edge's target (D). So C should have order 0, D order 1.
+        let mut g = DagreGraph::new();
+
+        // Add edges in specific order - C first, then D
+        g.set_edge("B", "C", EdgeLabel::default());  // "Yes" branch
+        g.set_edge("B", "D", EdgeLabel::default());  // "No" branch
+
+        rank::assign_ranks(&mut g, Ranker::LongestPath);
+        order(&mut g);
+
+        // C and D are on the same rank (both successors of B)
+        let c_order = g.node("C").unwrap().order;
+        let d_order = g.node("D").unwrap().order;
+
+        assert!(c_order.is_some() && d_order.is_some());
+
+        // C (first edge target) should have lower order than D (second edge target)
+        // This matches mermaid.js behavior where first branch appears on top
+        assert!(
+            c_order.unwrap() < d_order.unwrap(),
+            "C (Action 1, first edge) should have lower order than D (Action 2, second edge). C order: {:?}, D order: {:?}",
+            c_order, d_order
+        );
     }
 }

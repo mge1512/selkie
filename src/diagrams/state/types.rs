@@ -208,6 +208,10 @@ pub struct StateDb {
     direction: Direction,
     /// Divider counter for unique IDs
     divider_cnt: usize,
+    /// Start state counter for unique IDs
+    start_cnt: usize,
+    /// End state counter for unique IDs
+    end_cnt: usize,
     /// Accessibility title
     pub acc_title: String,
     /// Accessibility description
@@ -233,6 +237,8 @@ impl StateDb {
             root_doc: Vec::new(),
             direction: Direction::TopToBottom,
             divider_cnt: 0,
+            start_cnt: 0,
+            end_cnt: 0,
             acc_title: String::new(),
             acc_descr: String::new(),
             diagram_title: String::new(),
@@ -247,6 +253,8 @@ impl StateDb {
         self.root_doc.clear();
         self.direction = Direction::TopToBottom;
         self.divider_cnt = 0;
+        self.start_cnt = 0;
+        self.end_cnt = 0;
         self.acc_title.clear();
         self.acc_descr.clear();
         self.diagram_title.clear();
@@ -333,11 +341,37 @@ impl StateDb {
     }
 
     /// Add a relation between two states
+    /// Handles [*] specially: creates unique start/end state IDs
     pub fn add_relation(&mut self, state1: &str, state2: &str, description: Option<&str>) {
-        self.add_state(state1);
-        self.add_state(state2);
+        // Handle [*] as source (start state) - create unique ID
+        let actual_state1 = if state1 == "[*]" {
+            let id = format!("[*]_start_{}", self.start_cnt);
+            self.start_cnt += 1;
+            // Add as a start state type
+            let mut state = State::new(id.clone());
+            state.state_type = StateType::Start;
+            self.states.insert(id.clone(), state);
+            id
+        } else {
+            self.add_state(state1);
+            state1.to_string()
+        };
 
-        let mut relation = Relation::new(state1.to_string(), state2.to_string());
+        // Handle [*] as target (end state) - create unique ID
+        let actual_state2 = if state2 == "[*]" {
+            let id = format!("[*]_end_{}", self.end_cnt);
+            self.end_cnt += 1;
+            // Add as an end state type
+            let mut state = State::new(id.clone());
+            state.state_type = StateType::End;
+            self.states.insert(id.clone(), state);
+            id
+        } else {
+            self.add_state(state2);
+            state2.to_string()
+        };
+
+        let mut relation = Relation::new(actual_state1, actual_state2);
         if let Some(desc) = description {
             relation.description = Some(desc.to_string());
         }

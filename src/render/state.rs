@@ -4,21 +4,117 @@ use std::collections::HashMap;
 
 use crate::diagrams::state::{Direction, NotePosition, State, StateDb, StateType};
 use crate::error::Result;
+use crate::layout::{
+    layout, CharacterSizeEstimator, LayoutDirection, LayoutEdge, LayoutGraph,
+    LayoutNode, LayoutOptions, NodeShape, NodeSizeConfig, Padding, SizeEstimator, ToLayoutGraph,
+};
 use crate::render::svg::{Attrs, RenderConfig, SvgDocument, SvgElement};
+
+/// Implement ToLayoutGraph for StateDb to enable proper DAG layout
+impl ToLayoutGraph for StateDb {
+    fn to_layout_graph(&self, size_estimator: &dyn SizeEstimator) -> Result<LayoutGraph> {
+        let config = NodeSizeConfig::default();
+        let mut graph = LayoutGraph::new("state");
+
+        // Set layout options from diagram direction
+        graph.options = LayoutOptions {
+            direction: self.preferred_direction(),
+            node_spacing: 50.0,
+            layer_spacing: 60.0,
+            padding: Padding::uniform(20.0),
+        };
+
+        // Determine start/end states based on transitions
+        let start_end_states = determine_start_end_states(self);
+
+        // Convert states to layout nodes (sorted for deterministic order)
+        let states = self.get_states();
+        let mut state_ids: Vec<&String> = states.keys().collect();
+        state_ids.sort();
+
+        for id in state_ids {
+            let state = states.get(id).unwrap();
+
+            // Determine shape based on state type
+            let (shape, label) = match state.state_type {
+                StateType::Start => (NodeShape::Circle, None),
+                StateType::End => (NodeShape::DoubleCircle, None),
+                StateType::Fork | StateType::Join => (NodeShape::Rectangle, None),
+                StateType::Choice => (NodeShape::Diamond, None),
+                StateType::Divider => (NodeShape::Rectangle, None),
+                StateType::Default => {
+                    // Check if this is a [*] state that's been classified
+                    if id.starts_with("[*]") {
+                        if let Some(state_info) = start_end_states.get(id.as_str()) {
+                            if state_info.is_start {
+                                (NodeShape::Circle, None)
+                            } else {
+                                (NodeShape::DoubleCircle, None)
+                            }
+                        } else {
+                            (NodeShape::Circle, None)
+                        }
+                    } else {
+                        let desc = state.descriptions.first().map(|s| s.as_str());
+                        (NodeShape::RoundedRect, desc.or(Some(id.as_str())))
+                    }
+                }
+            };
+
+            let label_text = label.unwrap_or(if id.starts_with("[*]") { "" } else { &state.id });
+            let (width, height) = if id.starts_with("[*]") || matches!(state.state_type, StateType::Start | StateType::End) {
+                // Small fixed size for start/end circles
+                (24.0, 24.0)
+            } else if matches!(state.state_type, StateType::Fork | StateType::Join) {
+                (8.0, 60.0)
+            } else {
+                size_estimator.estimate_node_size(Some(label_text), shape, &config)
+            };
+
+            let mut node = LayoutNode::new(id, width, height).with_shape(shape);
+
+            if !label_text.is_empty() {
+                node = node.with_label(label_text);
+            }
+
+            // Store state type in metadata
+            node.metadata.insert("state_type".to_string(), format!("{:?}", state.state_type));
+
+            graph.add_node(node);
+        }
+
+        // Convert relations to edges
+        for (i, relation) in self.get_relations().iter().enumerate() {
+            let edge_id = format!("transition-{}", i);
+            let mut edge = LayoutEdge::new(&edge_id, &relation.state1, &relation.state2);
+
+            if let Some(desc) = &relation.description {
+                edge = edge.with_label(desc);
+            }
+
+            graph.add_edge(edge);
+        }
+
+        Ok(graph)
+    }
+
+    fn preferred_direction(&self) -> LayoutDirection {
+        match self.get_direction() {
+            Direction::TopToBottom => LayoutDirection::TopToBottom,
+            Direction::BottomToTop => LayoutDirection::BottomToTop,
+            Direction::LeftToRight => LayoutDirection::LeftToRight,
+            Direction::RightToLeft => LayoutDirection::RightToLeft,
+        }
+    }
+}
 
 /// Render a state diagram to SVG
 pub fn render_state(db: &StateDb, config: &RenderConfig) -> Result<String> {
     let mut doc = SvgDocument::new();
 
     // Layout constants
-    let state_width = 120.0;
-    let state_height = 40.0;
-    let state_spacing_x = 80.0;
-    let state_spacing_y = 60.0;
-    let margin = 50.0;
     let start_end_radius = 12.0;
-    let fork_join_width = 8.0;
-    let fork_join_height = 60.0;
+    let margin = 20.0;
 
     // Determine which [*] states are starts vs ends based on transitions
     let start_end_states = determine_start_end_states(db);
@@ -44,39 +140,25 @@ pub fn render_state(db: &StateDb, config: &RenderConfig) -> Result<String> {
         return Ok(doc.to_string());
     }
 
-    // Calculate positions for states using simple grid layout
-    let mut state_positions: HashMap<String, (f64, f64)> = HashMap::new();
-    let direction = db.get_direction();
-    let is_horizontal = direction == Direction::LeftToRight || direction == Direction::RightToLeft;
+    // Use proper DAG layout
+    let size_estimator = CharacterSizeEstimator::default();
+    let layout_input = db.to_layout_graph(&size_estimator)?;
+    let layout_result = layout(layout_input)?;
 
-    // Sort states to get consistent ordering
-    let mut sorted_states: Vec<_> = states.iter().collect();
-    sorted_states.sort_by(|a, b| a.0.cmp(b.0));
-
-    let cols_per_row = if is_horizontal {
-        sorted_states.len()
-    } else {
-        ((sorted_states.len() as f64).sqrt().ceil() as usize).max(1)
-    };
-
-    let mut max_width = margin;
-    let mut max_height = margin;
+    // Extract positions from layout
+    let mut state_positions: HashMap<String, (f64, f64, f64, f64)> = HashMap::new();
+    for node in &layout_result.nodes {
+        if let (Some(x), Some(y)) = (node.x, node.y) {
+            state_positions.insert(node.id.clone(), (x, y, node.width, node.height));
+        }
+    }
 
     // Title offset
     let title_offset = if !db.diagram_title.is_empty() { 40.0 } else { 0.0 };
 
-    for (i, (id, state)) in sorted_states.iter().enumerate() {
-        let row = i / cols_per_row;
-        let col = i % cols_per_row;
-
-        let x = margin + (col as f64) * (state_width + state_spacing_x);
-        let y = margin + title_offset + (row as f64) * (state_height + state_spacing_y);
-
-        state_positions.insert((*id).clone(), (x, y));
-
-        max_width = max_width.max(x + state_width + margin);
-        max_height = max_height.max(y + state_height + margin);
-    }
+    // Calculate diagram bounds
+    let max_width = layout_result.width.unwrap_or(400.0) + margin * 2.0;
+    let max_height = layout_result.height.unwrap_or(200.0) + margin * 2.0 + title_offset;
 
     doc.set_size(max_width, max_height);
 
@@ -104,21 +186,26 @@ pub fn render_state(db: &StateDb, config: &RenderConfig) -> Result<String> {
         doc.add_element(title_elem);
     }
 
+    // Sort states for consistent ordering
+    let mut sorted_states: Vec<_> = states.iter().collect();
+    sorted_states.sort_by(|a, b| a.0.cmp(b.0));
+
     // Render each state
     for (id, state) in &sorted_states {
-        if let Some(&(x, y)) = state_positions.get(*id) {
+        if let Some(&(x, y, width, height)) = state_positions.get(*id) {
             // Check if this [*] state is a start or end
-            let is_end_state = start_end_states.get(*id).copied().unwrap_or(false);
+            let state_info = start_end_states.get(id.as_str());
+            let is_end_state = state_info.map(|info| !info.is_start).unwrap_or(false);
 
             let state_elem = render_state_node(
                 state,
                 x,
                 y,
-                state_width,
-                state_height,
+                width,
+                height,
                 start_end_radius,
-                fork_join_width,
-                fork_join_height,
+                8.0,  // fork_join_width
+                60.0, // fork_join_height
                 is_end_state,
             );
             doc.add_element(state_elem);
@@ -127,7 +214,7 @@ pub fn render_state(db: &StateDb, config: &RenderConfig) -> Result<String> {
             if let Some(note) = &state.note {
                 let note_x = match note.position {
                     NotePosition::LeftOf => x - 120.0,
-                    NotePosition::RightOf => x + state_width + 20.0,
+                    NotePosition::RightOf => x + width + 20.0,
                 };
                 let note_elem = render_note(note_x, y, &note.text);
                 doc.add_element(note_elem);
@@ -137,7 +224,7 @@ pub fn render_state(db: &StateDb, config: &RenderConfig) -> Result<String> {
 
     // Render transitions
     for relation in db.get_relations() {
-        if let (Some(&(x1, y1)), Some(&(x2, y2))) = (
+        if let (Some(&(x1, y1, w1, h1)), Some(&(x2, y2, w2, h2))) = (
             state_positions.get(&relation.state1),
             state_positions.get(&relation.state2),
         ) {
@@ -149,11 +236,11 @@ pub fn render_state(db: &StateDb, config: &RenderConfig) -> Result<String> {
                 y1,
                 x2,
                 y2,
-                state_width,
-                state_height,
+                w1,
+                h1,
                 start_end_radius,
-                fork_join_width,
-                fork_join_height,
+                8.0,  // fork_join_width
+                60.0, // fork_join_height
                 state1.map(|s| s.state_type),
                 state2.map(|s| s.state_type),
                 relation.description.as_deref(),
@@ -572,33 +659,57 @@ fn create_arrow_marker() -> SvgElement {
     }
 }
 
-/// Determine which [*] states are end states based on transitions
-/// A [*] state is an end state if it's the target of a transition but not the source
-fn determine_start_end_states(db: &StateDb) -> HashMap<String, bool> {
+/// Info about whether a [*] state is a start or end state
+#[derive(Clone, Copy)]
+struct StartEndInfo {
+    is_start: bool,
+}
+
+/// Determine which [*] states are start vs end states based on transitions
+/// Creates unique IDs for each [*] occurrence to handle multiple start/end states
+fn determine_start_end_states(db: &StateDb) -> HashMap<&str, StartEndInfo> {
     let mut result = HashMap::new();
     let relations = db.get_relations();
 
-    // Track which [*] states are sources vs targets
-    let mut is_source = HashMap::new();
-    let mut is_target = HashMap::new();
+    // Track occurrences of [*] as source (start) vs target (end)
+    let mut start_count = 0;
+    let mut end_count = 0;
 
     for relation in relations {
-        if relation.state1 == "[*]" {
-            is_source.insert("[*]".to_string(), true);
+        // [*] as source -> it's a start state
+        if relation.state1 == "[*]" || relation.state1.starts_with("[*]_start") {
+            let id = if relation.state1 == "[*]" {
+                format!("[*]_start_{}", start_count)
+            } else {
+                relation.state1.clone()
+            };
+            start_count += 1;
         }
-        if relation.state2 == "[*]" {
-            is_target.insert("[*]".to_string(), true);
+        // [*] as target -> it's an end state
+        if relation.state2 == "[*]" || relation.state2.starts_with("[*]_end") {
+            let id = if relation.state2 == "[*]" {
+                format!("[*]_end_{}", end_count)
+            } else {
+                relation.state2.clone()
+            };
+            end_count += 1;
         }
     }
 
-    // A [*] that is only a target (not a source) is an end state
-    // A [*] that is only a source (not a target) is a start state
-    // A [*] that is both... could be either. For now, if it has incoming transitions, treat as end.
-    if is_target.contains_key("[*]") && !is_source.contains_key("[*]") {
-        result.insert("[*]".to_string(), true); // is_end_state = true
-    } else if is_target.contains_key("[*]") {
-        // Has both incoming and outgoing - treat as end state since it has incoming
-        result.insert("[*]".to_string(), true);
+    // Classify states in the states map
+    for (id, _state) in db.get_states() {
+        if id.starts_with("[*]_start") {
+            result.insert(id.as_str(), StartEndInfo { is_start: true });
+        } else if id.starts_with("[*]_end") {
+            result.insert(id.as_str(), StartEndInfo { is_start: false });
+        } else if id == "[*]" {
+            // Single [*] - check if it's source or target in relations
+            let is_source = relations.iter().any(|r| r.state1 == "[*]");
+            let is_target = relations.iter().any(|r| r.state2 == "[*]");
+
+            // Start if it's only a source, end if it's only a target or both
+            result.insert("[*]", StartEndInfo { is_start: is_source && !is_target });
+        }
     }
 
     result

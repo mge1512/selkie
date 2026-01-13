@@ -4,7 +4,81 @@ use std::collections::HashMap;
 
 use crate::diagrams::er::{Cardinality, Direction, ErDb, Entity, Identification};
 use crate::error::Result;
+use crate::layout::{
+    layout, CharacterSizeEstimator, LayoutDirection, LayoutEdge, LayoutGraph,
+    LayoutNode, LayoutOptions, NodeShape, Padding, SizeEstimator, ToLayoutGraph,
+};
 use crate::render::svg::{Attrs, RenderConfig, SvgDocument, SvgElement};
+
+/// Implement ToLayoutGraph for ErDb to enable proper DAG layout
+impl ToLayoutGraph for ErDb {
+    fn to_layout_graph(&self, _size_estimator: &dyn SizeEstimator) -> Result<LayoutGraph> {
+        let mut graph = LayoutGraph::new("er");
+
+        // Set layout options from diagram direction
+        graph.options = LayoutOptions {
+            direction: self.preferred_direction(),
+            node_spacing: 60.0,
+            layer_spacing: 80.0,
+            padding: Padding::uniform(30.0),
+        };
+
+        // Layout constants for entity sizing
+        let entity_width = 160.0;
+        let entity_header_height = 30.0;
+        let attr_row_height = 20.0;
+        let padding = 8.0;
+
+        // Convert entities to layout nodes
+        let entities = self.get_entities();
+
+        // Sort entities by name for deterministic ordering
+        let mut sorted_entities: Vec<(&String, &Entity)> = entities.iter().collect();
+        sorted_entities.sort_by(|a, b| a.0.cmp(b.0));
+
+        for (name, entity) in &sorted_entities {
+            // Calculate entity height based on attributes
+            let height = entity_header_height
+                + (entity.attributes.len() as f64) * attr_row_height
+                + padding * 2.0;
+            let height = height.max(entity_header_height + padding * 2.0);
+
+            let node = LayoutNode::new(&entity.id, entity_width, height)
+                .with_shape(NodeShape::Rectangle)
+                .with_label(name.as_str());
+
+            graph.add_node(node);
+        }
+
+        // Convert relationships to edges
+        // In ER diagrams, relationships indicate dependencies
+        // entity_a ||--o{ entity_b means entity_a is the "parent" (one) side
+        // So the edge goes from entity_a to entity_b (parent to child)
+        for (i, relationship) in self.get_relationships().iter().enumerate() {
+            let edge_id = format!("relationship-{}", i);
+
+            // Create edge from source (entity_a) to target (entity_b)
+            let mut edge = LayoutEdge::new(&edge_id, &relationship.entity_a, &relationship.entity_b);
+
+            if !relationship.role_a.is_empty() {
+                edge = edge.with_label(&relationship.role_a);
+            }
+
+            graph.add_edge(edge);
+        }
+
+        Ok(graph)
+    }
+
+    fn preferred_direction(&self) -> LayoutDirection {
+        match self.get_direction() {
+            Direction::TopToBottom => LayoutDirection::TopToBottom,
+            Direction::BottomToTop => LayoutDirection::BottomToTop,
+            Direction::LeftToRight => LayoutDirection::LeftToRight,
+            Direction::RightToLeft => LayoutDirection::RightToLeft,
+        }
+    }
+}
 
 /// Render an ER diagram to SVG
 pub fn render_er(db: &ErDb, config: &RenderConfig) -> Result<String> {
@@ -14,8 +88,6 @@ pub fn render_er(db: &ErDb, config: &RenderConfig) -> Result<String> {
     let entity_width = 160.0;
     let entity_header_height = 30.0;
     let attr_row_height = 20.0;
-    let entity_spacing_x = 100.0;
-    let entity_spacing_y = 80.0;
     let margin = 50.0;
     let padding = 8.0;
 
@@ -51,48 +123,35 @@ pub fn render_er(db: &ErDb, config: &RenderConfig) -> Result<String> {
     let mut sorted_entities: Vec<_> = entities.iter().collect();
     sorted_entities.sort_by(|a, b| a.0.cmp(b.0));
 
-    // Calculate positions using grid layout
-    let direction = db.get_direction();
-    let is_horizontal = direction == Direction::LeftToRight || direction == Direction::RightToLeft;
+    // Use proper DAG layout based on relationships
+    let size_estimator = CharacterSizeEstimator::default();
+    let layout_input = db.to_layout_graph(&size_estimator)?;
+    let layout_result = layout(layout_input)?;
 
-    let cols_per_row = if is_horizontal {
-        sorted_entities.len()
-    } else {
-        ((sorted_entities.len() as f64).sqrt().ceil() as usize).max(1)
-    };
-
+    // Extract positions from layout, mapping entity IDs to (x, y)
     let mut entity_positions: HashMap<String, (f64, f64)> = HashMap::new();
-    let mut max_width = margin;
-    let mut max_height = margin;
+
+    // Create a reverse mapping from entity ID to entity name
+    let id_to_name: HashMap<String, String> = entities
+        .iter()
+        .map(|(name, entity)| (entity.id.clone(), name.clone()))
+        .collect();
+
+    for node in &layout_result.nodes {
+        if let (Some(x), Some(y)) = (node.x, node.y) {
+            // Map entity ID back to entity name
+            if let Some(entity_name) = id_to_name.get(&node.id) {
+                entity_positions.insert(entity_name.clone(), (x, y));
+            }
+        }
+    }
 
     // Title offset
     let title_offset = if !db.diagram_title.is_empty() { 40.0 } else { 0.0 };
 
-    for (i, (name, _entity)) in sorted_entities.iter().enumerate() {
-        let row = i / cols_per_row;
-        let col = i % cols_per_row;
-
-        // Calculate row height
-        let row_start = row * cols_per_row;
-        let row_end = ((row + 1) * cols_per_row).min(sorted_entities.len());
-        let row_height: f64 = (row_start..row_end)
-            .map(|j| {
-                entity_heights
-                    .get(sorted_entities[j].0)
-                    .copied()
-                    .unwrap_or(entity_header_height)
-            })
-            .fold(0.0, f64::max);
-
-        let x = margin + (col as f64) * (entity_width + entity_spacing_x);
-        let y = margin + title_offset + (row as f64) * (row_height + entity_spacing_y);
-
-        entity_positions.insert((*name).clone(), (x, y));
-
-        let height = entity_heights.get(*name).copied().unwrap_or(entity_header_height);
-        max_width = max_width.max(x + entity_width + margin);
-        max_height = max_height.max(y + height + margin);
-    }
+    // Calculate diagram bounds from layout
+    let max_width = layout_result.width.unwrap_or(400.0) + margin * 2.0;
+    let max_height = layout_result.height.unwrap_or(200.0) + margin * 2.0 + title_offset;
 
     doc.set_size(max_width, max_height);
 

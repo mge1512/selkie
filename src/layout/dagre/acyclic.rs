@@ -44,12 +44,14 @@ pub fn run(g: &mut DagreGraph, method: Acyclicer) {
 
 /// Undo the cycle removal - restore reversed edges to original direction
 pub fn undo(g: &mut DagreGraph) {
-    let reversed_edges: Vec<EdgeKey> = g
+    // Collect reversed edges in sorted order for determinism
+    let mut reversed_edges: Vec<EdgeKey> = g
         .edges
         .iter()
         .filter(|(_, label)| label.reversed)
         .map(|(key, _)| key.clone())
         .collect();
+    reversed_edges.sort();
 
     for edge_key in reversed_edges {
         if let Some(mut label) = g.edges.remove(&edge_key) {
@@ -150,7 +152,10 @@ fn greedy_fas(g: &DagreGraph) -> Vec<EdgeKey> {
         sources.clear();
         sinks.clear();
 
-        for v in &active_nodes {
+        // Iterate in sorted order for determinism
+        let mut sorted_nodes: Vec<&String> = active_nodes.iter().collect();
+        sorted_nodes.sort();
+        for v in sorted_nodes {
             if *in_degree.get(v).unwrap_or(&0) == 0 {
                 sources.push(v.clone());
             }
@@ -185,7 +190,10 @@ fn greedy_fas(g: &DagreGraph) -> Vec<EdgeKey> {
             let mut best_node: Option<String> = None;
             let mut best_score = i32::MIN;
 
-            for v in &active_nodes {
+            // Iterate in sorted order so ties are resolved deterministically
+            let mut sorted_nodes: Vec<&String> = active_nodes.iter().collect();
+            sorted_nodes.sort();
+            for v in sorted_nodes {
                 let score = *out_degree.get(v).unwrap_or(&0) - *in_degree.get(v).unwrap_or(&0);
                 if score > best_score {
                     best_score = score;

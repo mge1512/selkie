@@ -38,6 +38,14 @@ impl SvgDocument {
         self.view_box = Some((0.0, 0.0, width, height));
     }
 
+    /// Set the document size with custom viewBox origin
+    /// Use this when content has negative coordinates
+    pub fn set_size_with_origin(&mut self, min_x: f64, min_y: f64, width: f64, height: f64) {
+        self.width = width;
+        self.height = height;
+        self.view_box = Some((min_x, min_y, width, height));
+    }
+
     /// Add a style block
     pub fn add_style(&mut self, css: &str) {
         self.styles.push(css.to_string());

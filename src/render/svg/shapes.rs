@@ -104,14 +104,18 @@ pub fn render_shape(node: &LayoutNode, vertex: &FlowVertex, _theme: &Theme) -> S
                     y1: y,
                     x2: x + bar_offset,
                     y2: y + h,
-                    attrs: Attrs::new(),
+                    attrs: Attrs::new()
+                        .with_stroke("#9370DB")
+                        .with_stroke_width(1.0),
                 },
                 SvgElement::Line {
                     x1: x + w - bar_offset,
                     y1: y,
                     x2: x + w - bar_offset,
                     y2: y + h,
-                    attrs: Attrs::new(),
+                    attrs: Attrs::new()
+                        .with_stroke("#9370DB")
+                        .with_stroke_width(1.0),
                 },
             ])
         }

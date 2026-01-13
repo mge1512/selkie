@@ -229,8 +229,11 @@ fn process_vertex_shape(pair: pest::iterators::Pair<Rule>) -> Result<(FlowVertex
 
 fn extract_text(pair: pest::iterators::Pair<Rule>) -> Result<FlowText> {
     for inner in pair.into_inner() {
-        if inner.as_rule() == Rule::text {
-            return process_text(inner);
+        match inner.as_rule() {
+            Rule::text | Rule::text_to_slash_bracket | Rule::text_to_backslash_bracket => {
+                return process_text(inner);
+            }
+            _ => {}
         }
     }
     Ok(FlowText::new(""))
@@ -251,7 +254,9 @@ fn process_text(pair: pest::iterators::Pair<Rule>) -> Result<FlowText> {
                 let text = &s[2..s.len() - 2];
                 return Ok(FlowText::markdown(text));
             }
-            Rule::plain_text => {
+            Rule::plain_text
+            | Rule::plain_text_to_slash_bracket
+            | Rule::plain_text_to_backslash_bracket => {
                 return Ok(FlowText::new(inner.as_str().trim()));
             }
             _ => {}
@@ -555,6 +560,10 @@ fn process_subgraph(pair: pest::iterators::Pair<Rule>, db: &mut FlowchartDb) -> 
     let mut id = String::new();
     let mut title = None;
 
+    // Track existing vertices before processing subgraph content
+    let existing_vertices: std::collections::HashSet<String> =
+        db.vertices().keys().cloned().collect();
+
     for inner in pair.into_inner() {
         match inner.as_rule() {
             Rule::subgraph_id => {
@@ -581,7 +590,14 @@ fn process_subgraph(pair: pest::iterators::Pair<Rule>, db: &mut FlowchartDb) -> 
         }
     }
 
-    db.add_subgraph(&id, title.as_deref().unwrap_or(&id));
+    // Find vertices that were added during subgraph processing
+    let new_vertices: Vec<String> = db.vertices()
+        .keys()
+        .filter(|k| !existing_vertices.contains(*k))
+        .cloned()
+        .collect();
+
+    db.add_subgraph_with_nodes(&id, title.as_deref().unwrap_or(&id), new_vertices);
     Ok(())
 }
 
@@ -1183,6 +1199,19 @@ A[Hard] -->|Text| B(Round)"#;
             assert_eq!(edges[0].text, "text");
         }
 
+        #[test]
+        fn should_handle_pipe_text_edge_labels() {
+            // This is the mermaid.js syntax: -->|Yes|
+            let input = "flowchart LR\n    B -->|Yes| C\n    B -->|No| D";
+            let result = parse(input);
+            assert!(result.is_ok(), "Failed to parse pipe text edge: {:?}", result);
+            let db = result.unwrap();
+            let edges = db.get_edges();
+            assert_eq!(edges.len(), 2, "Should have 2 edges");
+            assert_eq!(edges[0].text, "Yes", "First edge should have 'Yes' label");
+            assert_eq!(edges[1].text, "No", "Second edge should have 'No' label");
+        }
+
         // Edge type and stroke verification tests
         #[test]
         fn should_set_arrow_point_type_for_normal_arrow() {
@@ -1346,9 +1375,10 @@ A[Hard] -->|Text| B(Round)"#;
         }
 
         #[test]
-        #[ignore = "TODO: Fix trapezoid shape parsing"]
         fn should_parse_trapezoid() {
-            let input = "flowchart LR\nA[/Trapezoid/]";
+            // [/...\] = trapezoid per mermaid.js jison grammar
+            let input = r#"flowchart LR
+A[/Trapezoid\]"#;
             let result = parse(input);
             assert!(result.is_ok(), "Failed to parse trapezoid: {:?}", result);
             let db = result.unwrap();
@@ -1357,10 +1387,10 @@ A[Hard] -->|Text| B(Round)"#;
         }
 
         #[test]
-        #[ignore = "TODO: Fix inv trapezoid shape parsing"]
         fn should_parse_inv_trapezoid() {
+            // [\../] = inv_trapezoid per mermaid.js jison grammar
             let input = r#"flowchart LR
-A[\InvTrapezoid\]"#;
+A[\InvTrapezoid/]"#;
             let result = parse(input);
             assert!(result.is_ok(), "Failed to parse inv trapezoid: {:?}", result);
             let db = result.unwrap();
@@ -1369,10 +1399,10 @@ A[\InvTrapezoid\]"#;
         }
 
         #[test]
-        #[ignore = "TODO: Fix lean right shape parsing"]
         fn should_parse_lean_right() {
+            // [/../] = lean_right (parallelogram) per mermaid.js jison grammar
             let input = r#"flowchart LR
-A[/LeanRight\]"#;
+A[/LeanRight/]"#;
             let result = parse(input);
             assert!(result.is_ok(), "Failed to parse: {:?}", result);
             let db = result.unwrap();
@@ -1381,10 +1411,10 @@ A[/LeanRight\]"#;
         }
 
         #[test]
-        #[ignore = "TODO: Fix lean left shape parsing"]
         fn should_parse_lean_left() {
+            // [\...\] = lean_left (parallelogram) per mermaid.js jison grammar
             let input = r#"flowchart LR
-A[\LeanLeft/]"#;
+A[\LeanLeft\]"#;
             let result = parse(input);
             assert!(result.is_ok(), "Failed to parse: {:?}", result);
             let db = result.unwrap();

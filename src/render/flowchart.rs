@@ -20,8 +20,11 @@ impl ToLayoutGraph for FlowchartDb {
             padding: Padding::uniform(20.0),
         };
 
-        // Convert vertices to layout nodes
-        for (id, vertex) in self.vertices() {
+        // Convert vertices to layout nodes (sorted for deterministic order)
+        let mut vertex_ids: Vec<&String> = self.vertices().keys().collect();
+        vertex_ids.sort();
+        for id in vertex_ids {
+            let vertex = self.vertices().get(id).unwrap();
             let shape = vertex
                 .vertex_type
                 .as_ref()
@@ -153,5 +156,109 @@ mod tests {
 
         let edge = &graph.edges[0];
         assert_eq!(edge.label.as_deref(), Some("Yes"));
+    }
+
+    #[test]
+    fn test_flowchart_edge_points_after_layout() {
+        use crate::layout;
+
+        let mut db = FlowchartDb::new();
+        db.set_direction("LR");
+        db.add_vertex_simple("A", Some("Start"), Some(FlowVertexType::Round));
+        db.add_vertex_simple("B", Some("End"), Some(FlowVertexType::Rect));
+        db.add_edge("A", "B", "-->", None, None);
+
+        let estimator = CharacterSizeEstimator::default();
+        let graph = db.to_layout_graph(&estimator).unwrap();
+
+        eprintln!("Before layout:");
+        eprintln!("  Nodes: {:?}", graph.nodes.iter().map(|n| &n.id).collect::<Vec<_>>());
+        eprintln!("  Edges: {:?}", graph.edges.iter().map(|e| (&e.id, &e.sources, &e.targets)).collect::<Vec<_>>());
+
+        // Run layout
+        let graph = layout::layout(graph).unwrap();
+
+        eprintln!("\nAfter layout:");
+        for edge in &graph.edges {
+            eprintln!("  Edge {} ({:?} -> {:?}):", edge.id, edge.sources, edge.targets);
+            eprintln!("    bend_points: {:?}", edge.bend_points);
+            eprintln!("    label_position: {:?}", edge.label_position);
+        }
+
+        // Check that edges have bend points
+        let edge = &graph.edges[0];
+        assert!(
+            !edge.bend_points.is_empty(),
+            "Flowchart edge should have bend points after layout, got: {:?}",
+            edge
+        );
+    }
+
+    #[test]
+    fn test_decision_branch_ordering_from_parsed_flowchart() {
+        use crate::diagrams::flowchart::parse;
+        use crate::layout;
+
+        // Parse the flowchart with decision branches
+        let input = "flowchart LR\n    B{Decision} -->|Yes| C[Action 1]\n    B -->|No| D[Action 2]";
+        let db = parse(input).unwrap();
+
+        // Convert to layout graph
+        let estimator = CharacterSizeEstimator::default();
+        let graph = db.to_layout_graph(&estimator).unwrap();
+
+        // Run layout
+        let graph = layout::layout(graph).unwrap();
+
+        // Get positions of C and D
+        let c = graph.get_node("C").unwrap();
+        let d = graph.get_node("D").unwrap();
+
+        // In LR layout, C (first branch, "Yes") should be ABOVE D (second branch, "No")
+        // That means C should have LOWER y coordinate
+        assert!(
+            c.y.unwrap() < d.y.unwrap(),
+            "C (Action 1, first branch) should be above D (Action 2, second branch) in LR layout. C.y={:?}, D.y={:?}",
+            c.y, d.y
+        );
+    }
+
+    #[test]
+    fn test_flowchart_svg_has_edge_path() {
+        use crate::diagrams::Diagram;
+        use crate::render;
+
+        let mut db = FlowchartDb::new();
+        db.set_direction("LR");
+        db.add_vertex_simple("A", Some("Start"), Some(FlowVertexType::Round));
+        db.add_vertex_simple("B", Some("End"), Some(FlowVertexType::Rect));
+        db.add_edge("A", "B", "-->", None, None);
+
+        // Render to SVG
+        let diagram = Diagram::Flowchart(db);
+        let svg = render::render(&diagram).unwrap();
+
+        eprintln!("Generated SVG:\n{}", svg);
+
+        // Edge should have a path element
+        assert!(
+            svg.contains("<path"),
+            "SVG should contain path element for edge. SVG:\n{}",
+            svg
+        );
+
+        // Check for edge-path class
+        assert!(
+            svg.contains("edge-path"),
+            "SVG should contain edge-path class. SVG:\n{}",
+            svg
+        );
+
+        // Path should have actual coordinates (M command followed by numbers)
+        assert!(
+            svg.contains("M "),
+            "Path should have M (move) command. SVG:\n{}",
+            svg
+        );
     }
 }

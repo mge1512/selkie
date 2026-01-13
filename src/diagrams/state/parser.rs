@@ -430,7 +430,7 @@ fn process_transition(
         }
     }
 
-    // Ensure states exist
+    // Ensure non-[*] states exist (add_relation handles [*] states specially)
     if from != "[*]" {
         db.add_state(&from);
     }
@@ -438,7 +438,7 @@ fn process_transition(
         db.add_state(&to);
     }
 
-    // Add the relation
+    // Add the relation - this handles [*] states by creating unique start/end IDs
     db.add_relation(&from, &to, label.as_deref());
     Ok(())
 }

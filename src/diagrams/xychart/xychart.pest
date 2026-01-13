@@ -11,7 +11,7 @@ diagram = { SOI ~ leading_content* ~ keyword_xychart ~ orientation? ~ document ~
 leading_content = _{ leading_comment | NEWLINE }
 leading_comment = _{ "%%" ~ (!NEWLINE ~ ANY)* ~ NEWLINE? }
 
-keyword_xychart = _{ ^"xychart" }
+keyword_xychart = _{ ^"xychart-beta" | ^"xychart" }
 
 orientation = { ^"horizontal" | ^"vertical" }
 

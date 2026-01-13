@@ -50,10 +50,20 @@ pub fn render_pie(db: &PieDb, config: &RenderConfig) -> Result<String> {
         return Ok(doc.to_string());
     }
 
-    // Sort sections by value descending (largest first) to match mermaid.js
-    // This places the largest slice at the top, then smaller ones counter-clockwise
-    let mut ordered_sections: Vec<_> = sections.iter().cloned().collect();
-    ordered_sections.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    // Mermaid.js assigns colors based on ORIGINAL input order, but renders slices
+    // sorted by value descending. Legend stays in original order.
+
+    // Step 1: Create color mapping based on original order
+    let sections_vec: Vec<_> = sections.iter().cloned().collect();
+    let label_to_color_index: std::collections::HashMap<_, _> = sections_vec
+        .iter()
+        .enumerate()
+        .map(|(i, (label, _))| (label.clone(), i))
+        .collect();
+
+    // Step 2: Sort by value descending for slice rendering
+    let mut sorted_for_rendering: Vec<_> = sections_vec.clone();
+    sorted_for_rendering.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
     // Pie colors (mermaid.js default theme - pastel colors)
     // These match the default theme from mermaid.js
@@ -111,11 +121,8 @@ pub fn render_pie(db: &PieDb, config: &RenderConfig) -> Result<String> {
     };
     doc.add_element(outer_circle);
 
-    // Collect legend items while rendering slices
-    let mut legend_items: Vec<(String, String, f64)> = Vec::new(); // (color, label, percentage)
-
-    // Render each slice
-    for (i, (label, value)) in ordered_sections.iter().enumerate() {
+    // Render each slice (sorted by value descending)
+    for (label, value) in sorted_for_rendering.iter() {
         let percentage = *value / total;
         let angle = percentage * 2.0 * PI;
         let end_angle = start_angle + angle;
@@ -139,7 +146,9 @@ pub fn render_pie(db: &PieDb, config: &RenderConfig) -> Result<String> {
             x2, y2      // End of arc
         );
 
-        let color = colors[i % colors.len()];
+        // Use color based on ORIGINAL input order, not sorted order
+        let color_index = label_to_color_index.get(label).copied().unwrap_or(0);
+        let color = colors[color_index % colors.len()];
         let slice = SvgElement::Path {
             d: path,
             attrs: Attrs::new()
@@ -171,11 +180,19 @@ pub fn render_pie(db: &PieDb, config: &RenderConfig) -> Result<String> {
             doc.add_element(pct_label);
         }
 
-        // Store legend item
-        legend_items.push((color.to_string(), label.clone(), percentage));
-
         start_angle = end_angle;
     }
+
+    // Build legend items in ORIGINAL input order (not sorted)
+    let legend_items: Vec<(String, String, f64)> = sections_vec
+        .iter()
+        .enumerate()
+        .map(|(i, (label, value))| {
+            let color = colors[i % colors.len()];
+            let percentage = *value / total;
+            (color.to_string(), label.clone(), percentage)
+        })
+        .collect();
 
     // Render legend
     let legend_group = render_legend(&legend_items, legend_x, legend_y, legend_item_height, legend_box_size);

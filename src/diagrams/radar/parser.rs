@@ -433,4 +433,69 @@ radar-beta
         let result = parse(input).unwrap();
         assert!(result.get_acc_description().contains("multiline"));
     }
+
+    // Cypress test diagrams
+    #[test]
+    fn test_cypress_radar_1() {
+        let input = r#"radar-beta
+                title Best Radar Ever
+                axis A, B, C
+                curve c1{1, 2, 3}"#;
+        let result = parse(input);
+        assert!(result.is_ok(), "Failed: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_cypress_radar_2() {
+        let input = r#"radar-beta
+                title Best Radar Ever
+                axis A, B, C
+                curve c1{1, 2, 3}
+                curve c2{2, 3, 1}"#;
+        let result = parse(input);
+        assert!(result.is_ok(), "Failed: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_cypress_radar_3_complex() {
+        let input = r#"radar-beta
+                title My favorite ninjas
+                axis Agility, Speed, Strength
+                axis Stam["Stamina"] , Intel["Intelligence"]
+
+                curve Ninja1["Naruto Uzumaki"]{
+                    Agility 2, Speed 2,
+                    Strength 3, Stam 5,
+                    Intel 0
+                }
+                curve Ninja2["Sasuke"]{2, 3, 4, 1, 5}
+                curve Ninja3 {3, 2, 1, 5, 4}
+
+                showLegend true
+                ticks 3
+                max 8
+                min 0
+                graticule polygon"#;
+        let result = parse(input);
+        assert!(result.is_ok(), "Failed: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_cypress_radar_4() {
+        let input = r#"radar-beta
+                title Best Radar Ever
+                axis A,B,C
+                curve mycurve{1,2,3}"#;
+        let result = parse(input);
+        assert!(result.is_ok(), "Failed: {:?}", result.err());
+    }
+
+    #[test]
+    fn test_cypress_radar_5() {
+        let input = r#"radar-beta
+                axis A,B,C
+                curve mycurve{1,2,3}"#;
+        let result = parse(input);
+        assert!(result.is_ok(), "Failed: {:?}", result.err());
+    }
 }
