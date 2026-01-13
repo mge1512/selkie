@@ -47,8 +47,8 @@ Selkie supports parsing for all major Mermaid diagram types. Rendering is comple
 <table>
 <tr>
 <th>Diagram Type</th>
-<th>Code</th>
-<th>Output</th>
+<th>Mermaid.js (GitHub)</th>
+<th>Selkie</th>
 </tr>
 <tr>
 <td><strong>Flowchart</strong><br><sub>Nodes, edges, subgraphs</sub></td>
