@@ -354,26 +354,58 @@ pub fn assign_node_intersects(graph: &mut DagreGraph) {
         points.push(end_point.clone());
 
         // For edges with only 2 points (no intermediate dummy nodes),
-        // add intermediate control points for smooth B-spline interpolation
-        // These points are collinear - the B-spline will create natural smoothing
+        // add intermediate points to create smooth curved edges like mermaid.js
+        // mermaid.js uses "elbow" style routing with L-shaped waypoints that get
+        // smoothed by d3's curveBasis into flowing S-curves
         if points.len() == 2 {
-            // Calculate direction vector
             let dx = end_point.x - start_point.x;
             let dy = end_point.y - start_point.y;
 
-            // Add two intermediate points at 1/3 and 2/3 along the edge
-            // These help the B-spline create smooth entry/exit at node boundaries
-            let cp1 = super::graph::Point {
-                x: start_point.x + dx * 0.33,
-                y: start_point.y + dy * 0.33,
-            };
-            let cp2 = super::graph::Point {
-                x: start_point.x + dx * 0.67,
-                y: start_point.y + dy * 0.67,
-            };
+            // For diagonal edges, create elbow-style waypoints
+            // The B-spline interpolation will smooth these into flowing curves
+            // mermaid.js curves approach the target horizontally - this creates the S-curve
+            if dx.abs() > 10.0 && dy.abs() > 10.0 {
+                // First intermediate: slight diagonal from start (easing out)
+                let cp1 = super::graph::Point {
+                    x: start_point.x + dx * 0.15,
+                    y: start_point.y + dy * 0.08,
+                };
 
-            points.insert(1, cp1);
-            points.insert(2, cp2);
+                // Second intermediate: middle of the curve (steeper diagonal)
+                let cp2 = super::graph::Point {
+                    x: start_point.x + dx * 0.45,
+                    y: start_point.y + dy * 0.5,
+                };
+
+                // Third intermediate: transition toward horizontal
+                let cp3 = super::graph::Point {
+                    x: start_point.x + dx * 0.75,
+                    y: start_point.y + dy * 0.92,
+                };
+
+                // Fourth intermediate: approach end nearly horizontally
+                let cp4 = super::graph::Point {
+                    x: end_point.x - dx * 0.08,
+                    y: end_point.y,
+                };
+
+                points.insert(1, cp1);
+                points.insert(2, cp2);
+                points.insert(3, cp3);
+                points.insert(4, cp4);
+            } else {
+                // For mostly straight edges, add collinear intermediate points
+                let cp1 = super::graph::Point {
+                    x: start_point.x + dx * 0.33,
+                    y: start_point.y + dy * 0.33,
+                };
+                let cp2 = super::graph::Point {
+                    x: start_point.x + dx * 0.67,
+                    y: start_point.y + dy * 0.67,
+                };
+                points.insert(1, cp1);
+                points.insert(2, cp2);
+            }
         }
 
         // Update edge with new points

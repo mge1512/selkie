@@ -19,7 +19,8 @@ pub struct CharacterSizeEstimator {
 impl Default for CharacterSizeEstimator {
     fn default() -> Self {
         Self {
-            // Approximate ratio for proportional fonts like Verdana/Arial
+            // Approximate ratio for proportional fonts like trebuchet ms
+            // Using 0.6 produces compact layouts; actual trebuchet ms is ~0.79
             char_width_ratio: 0.6,
             line_height_ratio: 1.4,
         }
