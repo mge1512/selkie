@@ -47,128 +47,43 @@ Selkie supports parsing for all major Mermaid diagram types. Rendering is comple
 <table>
 <tr>
 <th>Diagram Type</th>
-<th>Mermaid.js (GitHub)</th>
+<th>Mermaid.js</th>
 <th>Selkie</th>
 </tr>
 <tr>
 <td><strong>Flowchart</strong><br><sub>Nodes, edges, subgraphs</sub></td>
-<td>
-
-```mermaid
-flowchart LR
-    A[Start] --> B{Decision}
-    B -->|Yes| C[OK]
-    B -->|No| D[Cancel]
-    C --> E[End]
-    D --> E
-```
-
-</td>
-<td><img src="docs/images/flowchart.svg" alt="Flowchart" width="350"></td>
+<td><img src="docs/images/flowchart_mermaid.svg" alt="Flowchart Mermaid" width="350"></td>
+<td><img src="docs/images/flowchart.svg" alt="Flowchart Selkie" width="350"></td>
 </tr>
 <tr>
 <td><strong>Sequence</strong><br><sub>Participant interactions</sub></td>
-<td>
-
-```mermaid
-sequenceDiagram
-    Alice->>Bob: Hello Bob!
-    Bob-->>Alice: Hi Alice!
-    Alice->>Bob: How are you?
-    Bob-->>Alice: Great!
-```
-
-</td>
-<td><img src="docs/images/sequence.svg" alt="Sequence" width="350"></td>
+<td><img src="docs/images/sequence_mermaid.svg" alt="Sequence Mermaid" width="350"></td>
+<td><img src="docs/images/sequence.svg" alt="Sequence Selkie" width="350"></td>
 </tr>
 <tr>
 <td><strong>Class</strong><br><sub>UML relationships</sub></td>
-<td>
-
-```mermaid
-classDiagram
-    Animal <|-- Dog
-    Animal <|-- Cat
-    Animal : +String name
-    Animal : +eat()
-    class Dog{
-        +bark()
-    }
-    class Cat{
-        +meow()
-    }
-```
-
-</td>
-<td><img src="docs/images/class.svg" alt="Class" width="350"></td>
+<td><img src="docs/images/class_mermaid.svg" alt="Class Mermaid" width="350"></td>
+<td><img src="docs/images/class.svg" alt="Class Selkie" width="350"></td>
 </tr>
 <tr>
 <td><strong>State</strong><br><sub>State machines</sub></td>
-<td>
-
-```mermaid
-stateDiagram-v2
-    [*] --> Idle
-    Idle --> Running : start
-    Running --> Idle : stop
-    Running --> [*]
-```
-
-</td>
-<td><img src="docs/images/state.svg" alt="State" width="350"></td>
+<td><img src="docs/images/state_mermaid.svg" alt="State Mermaid" width="350"></td>
+<td><img src="docs/images/state.svg" alt="State Selkie" width="350"></td>
 </tr>
 <tr>
 <td><strong>ER Diagram</strong><br><sub>Data modeling</sub></td>
-<td>
-
-```mermaid
-erDiagram
-    CUSTOMER ||--o{ ORDER : places
-    ORDER ||--|{ ITEM : contains
-    CUSTOMER {
-        string name
-        string email
-    }
-    ORDER {
-        int id
-        date created
-    }
-```
-
-</td>
-<td><img src="docs/images/er.svg" alt="ER" width="350"></td>
+<td><img src="docs/images/er_mermaid.svg" alt="ER Mermaid" width="350"></td>
+<td><img src="docs/images/er.svg" alt="ER Selkie" width="350"></td>
 </tr>
 <tr>
 <td><strong>Gantt</strong><br><sub>Project timelines</sub></td>
-<td>
-
-```mermaid
-gantt
-    title Project Plan
-    dateFormat YYYY-MM-DD
-    section Phase 1
-    Task A :a1, 2024-01-01, 7d
-    Task B :a2, after a1, 5d
-    section Phase 2
-    Task C :b1, after a2, 10d
-```
-
-</td>
-<td><img src="docs/images/gantt.svg" alt="Gantt" width="350"></td>
+<td><img src="docs/images/gantt_mermaid.svg" alt="Gantt Mermaid" width="350"></td>
+<td><img src="docs/images/gantt.svg" alt="Gantt Selkie" width="350"></td>
 </tr>
 <tr>
 <td><strong>Pie Chart</strong><br><sub>Proportional data</sub></td>
-<td>
-
-```mermaid
-pie title Languages
-    "Rust" : 45
-    "TypeScript" : 30
-    "Python" : 25
-```
-
-</td>
-<td><img src="docs/images/pie.svg" alt="Pie" width="350"></td>
+<td><img src="docs/images/pie_mermaid.svg" alt="Pie Mermaid" width="350"></td>
+<td><img src="docs/images/pie.svg" alt="Pie Selkie" width="350"></td>
 </tr>
 </table>
 
