@@ -134,8 +134,7 @@ impl ReferenceCache {
 
         let stdout = String::from_utf8_lossy(&output.stdout);
 
-        // The render_mermaid.mjs script returns raw SVG by default
-        // or JSON if --analyze flag is used
+        // The renderer returns raw SVG by default
         if stdout.starts_with('<') {
             Ok(stdout.to_string())
         } else {
