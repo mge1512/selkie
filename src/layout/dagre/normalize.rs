@@ -395,24 +395,24 @@ pub fn assign_node_intersects(graph: &mut DagreGraph) {
 
             // For diagonal edges, create elbow-style waypoints
             // The B-spline interpolation will smooth these into flowing curves
-            // mermaid.js curves approach the target horizontally - this creates the S-curve
+            // mermaid.js curves START steep (big Y change) and END shallow (horizontal approach)
             if dx.abs() > 10.0 && dy.abs() > 10.0 {
-                // First intermediate: slight diagonal from start (easing out)
+                // First intermediate: steep start (more Y progress than X progress)
                 let cp1 = super::graph::Point {
-                    x: start_point.x + dx * 0.15,
-                    y: start_point.y + dy * 0.08,
+                    x: start_point.x + dx * 0.10,
+                    y: start_point.y + dy * 0.25,
                 };
 
-                // Second intermediate: middle of the curve (steeper diagonal)
+                // Second intermediate: still steep, continuing diagonal
                 let cp2 = super::graph::Point {
-                    x: start_point.x + dx * 0.45,
-                    y: start_point.y + dy * 0.5,
+                    x: start_point.x + dx * 0.30,
+                    y: start_point.y + dy * 0.55,
                 };
 
-                // Third intermediate: transition toward horizontal
+                // Third intermediate: transitioning to shallower angle
                 let cp3 = super::graph::Point {
-                    x: start_point.x + dx * 0.75,
-                    y: start_point.y + dy * 0.92,
+                    x: start_point.x + dx * 0.60,
+                    y: start_point.y + dy * 0.85,
                 };
 
                 // Fourth intermediate: approach end nearly horizontally
