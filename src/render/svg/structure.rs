@@ -196,10 +196,7 @@ fn extract_labels(doc: &roxmltree::Document) -> Vec<String> {
         if tag == "text" {
             let combined = collect_text_content(&node);
             // Normalize whitespace: collapse multiple spaces/newlines into single space
-            let combined: String = combined
-                .split_whitespace()
-                .collect::<Vec<_>>()
-                .join(" ");
+            let combined: String = combined.split_whitespace().collect::<Vec<_>>().join(" ");
             if !combined.is_empty() && !seen.contains(&combined) {
                 seen.insert(combined.clone());
                 labels.push(combined);
