@@ -107,9 +107,32 @@ enum ThemeArg {
 #[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
 enum OutputFormat {
     Svg,
-    // PNG and PDF require additional dependencies (not yet supported)
-    // Png,
-    // Pdf,
+    #[cfg(feature = "png")]
+    Png,
+    #[cfg(feature = "pdf")]
+    Pdf,
+}
+
+impl OutputFormat {
+    /// Detect output format from file extension
+    fn from_extension(path: &str) -> Option<Self> {
+        let path_lower = path.to_lowercase();
+        if path_lower.ends_with(".svg") {
+            Some(OutputFormat::Svg)
+        } else if path_lower.ends_with(".png") {
+            #[cfg(feature = "png")]
+            return Some(OutputFormat::Png);
+            #[cfg(not(feature = "png"))]
+            return None;
+        } else if path_lower.ends_with(".pdf") {
+            #[cfg(feature = "pdf")]
+            return Some(OutputFormat::Pdf);
+            #[cfg(not(feature = "pdf"))]
+            return None;
+        } else {
+            None
+        }
+    }
 }
 
 fn main() {
@@ -229,8 +252,36 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         eprintln!("Rendered {} bytes of SVG", svg.len());
     }
 
-    // Write output
-    write_output(&args.output, &svg)?;
+    // Determine output format
+    let format = args.output_format.unwrap_or_else(|| {
+        args.output
+            .as_deref()
+            .and_then(|p| {
+                if p == "-" {
+                    None
+                } else {
+                    OutputFormat::from_extension(p)
+                }
+            })
+            .unwrap_or(OutputFormat::Svg)
+    });
+
+    // Write output based on format
+    match format {
+        OutputFormat::Svg => {
+            write_output(&args.output, svg.as_bytes())?;
+        }
+        #[cfg(feature = "png")]
+        OutputFormat::Png => {
+            let png_data = svg_to_png(&svg, args.width, args.height)?;
+            write_binary_output(&args.output, &png_data)?;
+        }
+        #[cfg(feature = "pdf")]
+        OutputFormat::Pdf => {
+            let pdf_data = svg_to_pdf(&svg)?;
+            write_binary_output(&args.output, &pdf_data)?;
+        }
+    }
 
     if !args.quiet && args.output.as_deref() != Some("-") {
         if let Some(ref output) = args.output {
@@ -251,14 +302,106 @@ fn read_input(input: &str) -> Result<String, Box<dyn std::error::Error>> {
     }
 }
 
-fn write_output(output: &Option<String>, content: &str) -> Result<(), Box<dyn std::error::Error>> {
+fn write_output(output: &Option<String>, content: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
     match output.as_deref() {
         Some("-") | None => {
-            io::stdout().write_all(content.as_bytes())?;
+            io::stdout().write_all(content)?;
         }
         Some(path) => {
             fs::write(path, content)?;
         }
     }
     Ok(())
+}
+
+fn write_binary_output(
+    output: &Option<String>,
+    content: &[u8],
+) -> Result<(), Box<dyn std::error::Error>> {
+    match output.as_deref() {
+        Some("-") | None => {
+            io::stdout().write_all(content)?;
+        }
+        Some(path) => {
+            fs::write(path, content)?;
+        }
+    }
+    Ok(())
+}
+
+/// Convert SVG string to PNG bytes using resvg
+#[cfg(feature = "png")]
+fn svg_to_png(
+    svg: &str,
+    width: Option<u32>,
+    height: Option<u32>,
+) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    use resvg::tiny_skia;
+    use resvg::usvg;
+
+    // Set up options with font database
+    let mut opt = usvg::Options::default();
+    opt.fontdb_mut().load_system_fonts();
+
+    // Parse SVG
+    let tree = usvg::Tree::from_str(svg, &opt)
+        .map_err(|e| format!("Failed to parse SVG: {}", e))?;
+
+    // Calculate dimensions
+    let svg_size = tree.size();
+    let (target_width, target_height) = match (width, height) {
+        (Some(w), Some(h)) => (w, h),
+        (Some(w), None) => {
+            let scale = w as f32 / svg_size.width();
+            (w, (svg_size.height() * scale) as u32)
+        }
+        (None, Some(h)) => {
+            let scale = h as f32 / svg_size.height();
+            ((svg_size.width() * scale) as u32, h)
+        }
+        (None, None) => (svg_size.width() as u32, svg_size.height() as u32),
+    };
+
+    // Create pixmap
+    let mut pixmap = tiny_skia::Pixmap::new(target_width, target_height)
+        .ok_or("Failed to create pixmap")?;
+
+    // Calculate transform to fit
+    let scale_x = target_width as f32 / svg_size.width();
+    let scale_y = target_height as f32 / svg_size.height();
+    let transform = tiny_skia::Transform::from_scale(scale_x, scale_y);
+
+    // Render
+    resvg::render(&tree, transform, &mut pixmap.as_mut());
+
+    // Encode to PNG
+    let png_data = pixmap
+        .encode_png()
+        .map_err(|e| format!("Failed to encode PNG: {}", e))?;
+
+    Ok(png_data)
+}
+
+/// Convert SVG string to PDF bytes using svg2pdf
+#[cfg(feature = "pdf")]
+fn svg_to_pdf(svg: &str) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    use resvg::usvg;
+
+    // Set up options with font database
+    let mut opt = usvg::Options::default();
+    opt.fontdb_mut().load_system_fonts();
+
+    // Parse SVG
+    let tree = usvg::Tree::from_str(svg, &opt)
+        .map_err(|e| format!("Failed to parse SVG: {}", e))?;
+
+    // Convert to PDF
+    let pdf_data = svg2pdf::to_pdf(
+        &tree,
+        svg2pdf::ConversionOptions::default(),
+        svg2pdf::PageOptions::default(),
+    )
+    .map_err(|e| format!("Failed to convert to PDF: {}", e))?;
+
+    Ok(pdf_data)
 }

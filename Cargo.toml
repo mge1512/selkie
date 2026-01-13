@@ -77,8 +77,19 @@ required-features = ["cli"]
 [features]
 default = ["cli"]
 cli = ["clap"]
+png = ["resvg"]
+pdf = ["svg2pdf", "resvg"]
+all-formats = ["png", "pdf"]
 
 [dependencies.clap]
 version = "4.4"
 features = ["derive"]
+optional = true
+
+[dependencies.resvg]
+version = "0.45"
+optional = true
+
+[dependencies.svg2pdf]
+version = "0.13"
 optional = true
