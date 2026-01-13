@@ -92,9 +92,12 @@ impl ReferenceCache {
         Ok(svg)
     }
 
-    /// Render a diagram using mermaid.js via Node
+    /// Render a diagram using mermaid.js via Playwright
+    ///
+    /// Uses Playwright for accurate text measurements via real browser rendering.
     pub fn render_with_mermaid(&self, diagram: &str) -> Result<String, String> {
-        let script = self.validator_path.join("render_mermaid.mjs");
+        // Prefer Playwright renderer for accurate getBBox measurements
+        let script = self.validator_path.join("render_mermaid_playwright.mjs");
 
         if !script.exists() {
             return Err(format!(
