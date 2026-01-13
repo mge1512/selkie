@@ -19,6 +19,7 @@
 
 pub mod acyclic;
 pub mod compound;
+pub mod edge_labels;
 pub mod graph;
 pub mod nesting_graph;
 pub mod normalize;
@@ -102,61 +103,73 @@ pub fn layout(graph: &mut DagreGraph, config: &DagreConfig) {
     // Adjust coordinate system for LR/RL (swap width/height)
     adjust_coordinate_system(graph, config.rankdir);
 
-    // Phase 1: Make the graph acyclic
+    // Phase 1: Make space for edge labels (halve ranksep, double minlen)
+    edge_labels::make_space_for_edge_labels(graph, config.rankdir);
+
+    // Phase 2: Make the graph acyclic
     acyclic::run(graph, config.acyclicer);
 
-    // Phase 2: Build nesting graph for compound graphs
+    // Phase 3: Build nesting graph for compound graphs
     // This creates border nodes and nesting edges to constrain subgraph children
     let is_compound = graph.is_compound();
     if is_compound {
         nesting_graph::run(graph);
     }
 
-    // Phase 3: Assign ranks to nodes
+    // Phase 4: Assign ranks to nodes
     rank::assign_ranks(graph, config.ranker);
 
-    // Phase 4: Clean up nesting graph (remove nesting root and edges)
+    // Phase 5: Inject edge label proxies (create dummy nodes for labels)
+    edge_labels::inject_edge_label_proxies(graph);
+
+    // Phase 6: Clean up nesting graph (remove nesting root and edges)
     // This keeps rank assignments but removes temporary nesting structure
     if is_compound {
         nesting_graph::cleanup(graph);
     }
 
-    // Phase 5: Assign min/max ranks to compound nodes based on border positions
+    // Phase 7: Remove edge label proxies (store labelRank on edges)
+    edge_labels::remove_edge_label_proxies(graph);
+
+    // Phase 8: Assign min/max ranks to compound nodes based on border positions
     if is_compound {
         compound::assign_rank_min_max(graph);
     }
 
-    // Phase 6: Normalize edges (break long edges into unit-length segments)
+    // Phase 9: Normalize edges (break long edges into unit-length segments)
     normalize::run(graph);
 
-    // Phase 7: Parent dummy chains through LCA in compound graphs
+    // Phase 10: Parent dummy chains through LCA in compound graphs
     if is_compound {
         parent_dummy_chains::run(graph);
     }
 
-    // Phase 8: Add border segments (left/right border nodes per rank)
+    // Phase 11: Add border segments (left/right border nodes per rank)
     if is_compound {
         compound::add_border_segments(graph);
     }
 
-    // Phase 9: Order nodes within ranks (crossing minimization)
+    // Phase 12: Order nodes within ranks (crossing minimization)
     order::order(graph);
 
-    // Phase 10: Assign coordinates
+    // Phase 13: Assign coordinates
     position::position(graph);
 
-    // Phase 11: Remove border nodes and calculate compound node dimensions
+    // Phase 14: Remove border nodes and calculate compound node dimensions
     if is_compound {
         compound::remove_border_nodes(graph);
     }
 
-    // Phase 12: Denormalize (collect dummy node positions into edge points)
+    // Phase 15: Denormalize (collect dummy node positions into edge points)
     normalize::undo(graph);
+
+    // Phase 16: Fix up edge label coordinates based on labelpos
+    edge_labels::fixup_edge_label_coords(graph, config.rankdir);
 
     // Undo coordinate system transformation
     undo_coordinate_system(graph, config.rankdir);
 
-    // Phase 13: Compute edge intersection points with node boundaries
+    // Phase 17: Compute edge intersection points with node boundaries
     normalize::assign_node_intersects(graph);
 
     // Reverse edge points for reversed edges
