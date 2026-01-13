@@ -95,29 +95,24 @@ pub fn render_shape(node: &LayoutNode, vertex: &FlowVertex, _theme: &Theme) -> S
             SvgElement::path(d)
         }
         FlowVertexType::Subroutine => {
-            // Subroutine (predefined process) - rectangle with vertical lines
+            // Subroutine (predefined process) - rendered as polygon per mermaid.js
+            // Single polygon traces: inner rect → step to outer → outer rect → close
             let bar_offset = 10.0;
-            SvgElement::group(vec![
-                SvgElement::rect(x, y, w, h),
-                SvgElement::Line {
-                    x1: x + bar_offset,
-                    y1: y,
-                    x2: x + bar_offset,
-                    y2: y + h,
-                    attrs: Attrs::new()
-                        .with_stroke("#9370DB")
-                        .with_stroke_width(1.0),
-                },
-                SvgElement::Line {
-                    x1: x + w - bar_offset,
-                    y1: y,
-                    x2: x + w - bar_offset,
-                    y2: y + h,
-                    attrs: Attrs::new()
-                        .with_stroke("#9370DB")
-                        .with_stroke_width(1.0),
-                },
-            ])
+            let points = vec![
+                // Inner rectangle (main body)
+                Point::new(x + bar_offset, y),           // inner top-left
+                Point::new(x + w - bar_offset, y),       // inner top-right
+                Point::new(x + w - bar_offset, y + h),   // inner bottom-right
+                Point::new(x + bar_offset, y + h),       // inner bottom-left
+                Point::new(x + bar_offset, y),           // back to inner top-left
+                // Step out to outer rectangle
+                Point::new(x, y),                        // outer top-left
+                Point::new(x + w, y),                    // outer top-right
+                Point::new(x + w, y + h),                // outer bottom-right
+                Point::new(x, y + h),                    // outer bottom-left
+                Point::new(x, y),                        // close outer path
+            ];
+            SvgElement::polygon(points)
         }
         FlowVertexType::Trapezoid => {
             // Trapezoid - wider at bottom

@@ -395,19 +395,35 @@ fn test_flowchart_arrow_marker_size() {
 }
 
 #[test]
-fn test_flowchart_subroutine_has_vertical_lines() {
-    // Subroutine shape should have visible vertical lines
+fn test_flowchart_subroutine_uses_polygon() {
+    // Subroutine shape is rendered as a polygon (matching mermaid.js)
+    // The polygon traces inner rect → outer rect to create vertical bar effect
     let input = r#"flowchart LR
     A[[Subroutine]]"#;
 
     let diagram = parse(input).expect("Failed to parse flowchart");
     let svg = render(&diagram).expect("Failed to render flowchart");
 
-    // Lines should have stroke attribute to be visible
+    // Should use polygon element (not separate rect + lines)
     assert!(
-        svg.contains("<line") && svg.contains("stroke"),
-        "Subroutine should have visible vertical lines with stroke. SVG:\n{}", svg
+        svg.contains("<polygon"),
+        "Subroutine should use polygon element. SVG:\n{}", svg
     );
+
+    // The polygon should have points for both inner and outer rectangles
+    let points_re = regex::Regex::new(r#"<polygon points="([^"]+)""#).unwrap();
+    if let Some(caps) = points_re.captures(&svg) {
+        let points = caps.get(1).unwrap().as_str();
+        let point_count = points.split_whitespace().count();
+        // Should have 10 points for subroutine shape (inner rect 5 + outer rect 5)
+        assert!(
+            point_count >= 8,
+            "Subroutine polygon should have at least 8 points (got {}). Points: {}",
+            point_count, points
+        );
+    } else {
+        panic!("Subroutine should have polygon with points attribute. SVG:\n{}", svg);
+    }
 }
 
 #[test]
