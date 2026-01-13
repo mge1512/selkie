@@ -2,7 +2,7 @@
 name = "mermaid-rs"
 version = "0.1.0"
 edition = "2021"
-description = "A Rust port of mermaid.js - a diagramming and charting library"
+description = "A Rust implementation of the mermaid diagramming parser and renderer"
 license = "MIT"
 repository = "https://github.com/mermaid-rs/mermaid-rs"
 keywords = ["diagram", "chart", "flowchart", "sequence", "mermaid"]
@@ -69,8 +69,13 @@ path = "tools/gallery/generate.rs"
 name = "analyze-diff"
 path = "tools/gallery/analyze_diff.rs"
 
+[[bin]]
+name = "selkie"
+path = "src/bin/selkie.rs"
+required-features = ["cli"]
+
 [features]
-default = []
+default = ["cli"]
 cli = ["clap"]
 
 [dependencies.clap]

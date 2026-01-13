@@ -76,6 +76,22 @@ impl Theme {
         }
     }
 
+    /// Create a forest theme (green tones)
+    pub fn forest() -> Self {
+        Self {
+            primary_color: "#cde498".to_string(),
+            primary_text_color: "#333333".to_string(),
+            primary_border_color: "#13540c".to_string(),
+            secondary_color: "#cdffb2".to_string(),
+            tertiary_color: "#f4fff2".to_string(),
+            cluster_border_color: "#6eaa49".to_string(),
+            line_color: "#333333".to_string(),
+            background: "#ffffff".to_string(),
+            font_family: "trebuchet ms, verdana, arial, sans-serif".to_string(),
+            font_size: "16px".to_string(),
+        }
+    }
+
     /// Generate CSS for embedding in SVG
     pub fn generate_css(&self) -> String {
         format!(
