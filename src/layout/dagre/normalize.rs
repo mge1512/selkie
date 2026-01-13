@@ -379,57 +379,20 @@ pub fn assign_node_intersects(graph: &mut DagreGraph) {
         let end_point = intersect_node(&node_w, &p2);
 
         // Add start and end points
-        points.insert(0, start_point);
-        points.push(end_point);
+        points.insert(0, start_point.clone());
+        points.push(end_point.clone());
 
-        // For edges with only 2 points (no intermediate dummy nodes),
-        // add intermediate points to create smooth curved edges like mermaid.js
-        // Edges should leave perpendicular to their exit side and enter perpendicular to entry side
+        // For edges with only 2 points (no intermediate dummy nodes from normalization),
+        // add a midpoint to create the 3-point structure that curveBasis expects.
+        // The midpoint is biased toward the target's position to create natural curves
+        // that approach the target node more directly (matching mermaid.js behavior).
         if points.len() == 2 {
-            // Get node centers
-            let src_cx = node_v.x.unwrap_or(0.0);
-            let src_cy = node_v.y.unwrap_or(0.0);
-            let tgt_cx = node_w.x.unwrap_or(0.0);
-            let tgt_cy = node_w.y.unwrap_or(0.0);
-
-            // Compute exit direction (from source center to intersection point)
-            // This gives us the perpendicular direction to the exit side
-            let exit_dx = start_point.x - src_cx;
-            let exit_dy = start_point.y - src_cy;
-            let exit_len = (exit_dx * exit_dx + exit_dy * exit_dy).sqrt().max(1.0);
-            let exit_nx = exit_dx / exit_len;
-            let exit_ny = exit_dy / exit_len;
-
-            // Compute entry direction (from target center to intersection point)
-            // This gives us the perpendicular direction to the entry side
-            let entry_dx = end_point.x - tgt_cx;
-            let entry_dy = end_point.y - tgt_cy;
-            let entry_len = (entry_dx * entry_dx + entry_dy * entry_dy).sqrt().max(1.0);
-            let entry_nx = entry_dx / entry_len;
-            let entry_ny = entry_dy / entry_len;
-
-            // Distance for control point offset (proportional to edge length)
-            let edge_dx = end_point.x - start_point.x;
-            let edge_dy = end_point.y - start_point.y;
-            let edge_len = (edge_dx * edge_dx + edge_dy * edge_dy).sqrt();
-            let offset = edge_len * 0.35; // Control point distance
-
-            // Create 2 control points for S-curve:
-            // cp1: extends from start in exit perpendicular direction
-            // cp2: extends from end in entry perpendicular direction
-            // This creates a smooth curve that leaves perpendicular and enters perpendicular
-            let cp1 = super::graph::Point {
-                x: start_point.x + exit_nx * offset,
-                y: start_point.y + exit_ny * offset,
+            // Bias the midpoint toward the target: X uses target's X, Y is midpoint
+            let mid_point = super::graph::Point {
+                x: end_point.x,
+                y: (start_point.y + end_point.y) / 2.0,
             };
-
-            let cp2 = super::graph::Point {
-                x: end_point.x + entry_nx * offset,
-                y: end_point.y + entry_ny * offset,
-            };
-
-            points.insert(1, cp1);
-            points.insert(2, cp2);
+            points.insert(1, mid_point);
         }
 
         // Update edge with new points
