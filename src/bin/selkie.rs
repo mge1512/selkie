@@ -167,8 +167,8 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
 
     // Load config file if specified
     let config_file = if let Some(ref path) = args.config_file {
-        let content = fs::read_to_string(path)
-            .map_err(|e| format!("Failed to read config file: {}", e))?;
+        let content =
+            fs::read_to_string(path).map_err(|e| format!("Failed to read config file: {}", e))?;
         let cfg: ConfigFile = serde_json::from_str(&content)
             .map_err(|e| format!("Failed to parse config file: {}", e))?;
         if args.verbose {
@@ -414,8 +414,8 @@ fn svg_to_png(
     opt.fontdb_mut().load_system_fonts();
 
     // Parse SVG
-    let tree = usvg::Tree::from_str(svg, &opt)
-        .map_err(|e| format!("Failed to parse SVG: {}", e))?;
+    let tree =
+        usvg::Tree::from_str(svg, &opt).map_err(|e| format!("Failed to parse SVG: {}", e))?;
 
     // Calculate dimensions
     let svg_size = tree.size();
@@ -433,8 +433,8 @@ fn svg_to_png(
     };
 
     // Create pixmap
-    let mut pixmap = tiny_skia::Pixmap::new(target_width, target_height)
-        .ok_or("Failed to create pixmap")?;
+    let mut pixmap =
+        tiny_skia::Pixmap::new(target_width, target_height).ok_or("Failed to create pixmap")?;
 
     // Calculate transform to fit
     let scale_x = target_width as f32 / svg_size.width();
@@ -462,8 +462,8 @@ fn svg_to_pdf(svg: &str) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     opt.fontdb_mut().load_system_fonts();
 
     // Parse SVG
-    let tree = usvg::Tree::from_str(svg, &opt)
-        .map_err(|e| format!("Failed to parse SVG: {}", e))?;
+    let tree =
+        usvg::Tree::from_str(svg, &opt).map_err(|e| format!("Failed to parse SVG: {}", e))?;
 
     // Convert to PDF
     let pdf_data = svg2pdf::to_pdf(

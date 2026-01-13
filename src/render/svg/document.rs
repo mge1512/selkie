@@ -155,8 +155,7 @@ impl SvgDocument {
 
     /// Render a container group with elements
     fn render_container_group(&self, result: &mut String, class: &str, elements: &[SvgElement]) {
-        let group = SvgElement::group(elements.to_vec())
-            .with_attrs(Attrs::new().with_class(class));
+        let group = SvgElement::group(elements.to_vec()).with_attrs(Attrs::new().with_class(class));
         result.push_str(&group.to_svg(2));
         result.push('\n');
     }

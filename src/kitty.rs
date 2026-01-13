@@ -240,7 +240,10 @@ fn parse_rgb_response(response: &str) -> Option<BackgroundColor> {
     }
 
     // Clean up the last part (remove trailing escape sequences)
-    let b_part = parts[2].chars().take_while(|c| c.is_ascii_hexdigit()).collect::<String>();
+    let b_part = parts[2]
+        .chars()
+        .take_while(|c| c.is_ascii_hexdigit())
+        .collect::<String>();
 
     // Convert 16-bit hex to 8-bit (take first 2 hex digits)
     let r = u8::from_str_radix(&parts[0].chars().take(2).collect::<String>(), 16).ok()?;
@@ -286,8 +289,8 @@ fn get_ghostty_background() -> Option<BackgroundColor> {
 /// Returns an error if the image cannot be decoded or displayed.
 pub fn display_png(png_data: &[u8]) -> Result<(), DisplayError> {
     // Decode PNG to RGBA
-    let img = image::load_from_memory(png_data)
-        .map_err(|e| DisplayError::ImageDecode(e.to_string()))?;
+    let img =
+        image::load_from_memory(png_data).map_err(|e| DisplayError::ImageDecode(e.to_string()))?;
 
     let rgba = img.to_rgba8();
     let (width, height) = rgba.dimensions();
@@ -340,7 +343,9 @@ fn write_chunked_rgba(data: &str, width: u32, height: u32) -> Result<(), Display
         }
     }
 
-    stdout.flush().map_err(|e| DisplayError::Write(e.to_string()))?;
+    stdout
+        .flush()
+        .map_err(|e| DisplayError::Write(e.to_string()))?;
     Ok(())
 }
 

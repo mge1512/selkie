@@ -42,7 +42,6 @@ struct Difference {
 }
 
 #[derive(Debug, Clone, Copy)]
-#[allow(dead_code)]
 enum Severity {
     Critical,
     Major,
@@ -85,7 +84,10 @@ fn parse_dimension(value: &str) -> f64 {
         return 0.0;
     }
     // Extract numeric part
-    let numeric: String = value.chars().take_while(|c| c.is_ascii_digit() || *c == '.').collect();
+    let numeric: String = value
+        .chars()
+        .take_while(|c| c.is_ascii_digit() || *c == '.')
+        .collect();
     numeric.parse().unwrap_or(0.0)
 }
 
@@ -156,7 +158,8 @@ fn extract_metrics(svg_content: &str) -> SvgMetrics {
                     }
                 } else {
                     // Otherwise collect from tspans only
-                    let text: String = node.children()
+                    let text: String = node
+                        .children()
                         .filter(|n| n.is_element() && n.tag_name().name() == "tspan")
                         .filter_map(|n| n.text())
                         .map(|s| s.trim())
@@ -174,19 +177,11 @@ fn extract_metrics(svg_content: &str) -> SvgMetrics {
             "foreignObject" => {
                 // mermaid-js uses foreignObject for HTML text
                 metrics.text_count += 1;
-                // Only extract text from leaf elements (no element children)
-                // to avoid double-counting from nested elements
                 for descendant in node.descendants() {
-                    if descendant.is_element() {
-                        let has_element_children = descendant.children().any(|c| c.is_element());
-                        if !has_element_children {
-                            // This is a leaf element - extract its text
-                            if let Some(text) = descendant.text() {
-                                let text = text.trim().to_string();
-                                if !text.is_empty() {
-                                    metrics.text_contents.push(text);
-                                }
-                            }
+                    if let Some(text) = descendant.text() {
+                        let text = text.trim().to_string();
+                        if !text.is_empty() {
+                            metrics.text_contents.push(text);
                         }
                     }
                 }
@@ -218,7 +213,7 @@ fn extract_metrics(svg_content: &str) -> SvgMetrics {
     metrics
 }
 
-fn compare_metrics(_name: &str, rs: &SvgMetrics, ref_metrics: &SvgMetrics) -> Vec<Difference> {
+fn compare_metrics(name: &str, rs: &SvgMetrics, ref_metrics: &SvgMetrics) -> Vec<Difference> {
     let mut diffs = Vec::new();
 
     // Dimension differences
@@ -354,58 +349,34 @@ fn compare_metrics(_name: &str, rs: &SvgMetrics, ref_metrics: &SvgMetrics) -> Ve
 fn calculate_similarity(rs: &SvgMetrics, ref_metrics: &SvgMetrics) -> f64 {
     let mut score = 1.0;
 
-    // Text content penalty (max 70%) - PRIMARY VISUAL METRIC
-    // This is the most important check: do all the labels appear in both versions?
-    // Text content is what users actually see and care about.
+    // Dimension penalty (max 20%)
+    let dim_diff = ((rs.width - ref_metrics.width).abs() + (rs.height - ref_metrics.height).abs())
+        / (ref_metrics.width + ref_metrics.height + 1.0);
+    score -= (dim_diff * 0.2).min(0.2);
+
+    // Element count penalty (max 40%)
+    let total_ref_elems = ref_metrics.rect_count
+        + ref_metrics.circle_count
+        + ref_metrics.path_count
+        + ref_metrics.text_count
+        + ref_metrics.line_count;
+    let total_rs_elems =
+        rs.rect_count + rs.circle_count + rs.path_count + rs.text_count + rs.line_count;
+
+    if total_ref_elems > 0 {
+        let elem_diff =
+            (total_rs_elems as f64 - total_ref_elems as f64).abs() / total_ref_elems as f64;
+        score -= (elem_diff * 0.4).min(0.4);
+    }
+
+    // Text content penalty (max 30%)
     let rs_texts: HashSet<_> = rs.text_contents.iter().collect();
     let ref_texts: HashSet<_> = ref_metrics.text_contents.iter().collect();
     let common = rs_texts.intersection(&ref_texts).count();
     let total = rs_texts.len().max(ref_texts.len());
     if total > 0 {
         let text_similarity = common as f64 / total as f64;
-        score -= (1.0 - text_similarity) * 0.70;
-    }
-
-    // Dimension penalty (max 15%)
-    // Compares overall diagram size - some difference expected due to text measurement methods
-    // Using character-based estimation vs DOM measurement causes systematic differences
-    let dim_diff = ((rs.width - ref_metrics.width).abs() + (rs.height - ref_metrics.height).abs())
-        / (ref_metrics.width + ref_metrics.height + 1.0);
-    score -= (dim_diff * 0.15).min(0.15);
-
-    // Color palette penalty (max 5%)
-    // Only checking inline fill attributes - CSS colors need separate analysis
-    // Most diagrams use CSS for fills, so this is a minor check
-    let rs_fills: HashSet<_> = rs.fills.keys().collect();
-    let ref_fills: HashSet<_> = ref_metrics.fills.keys().collect();
-    let common_fills = rs_fills.intersection(&ref_fills).count();
-    let total_fills = rs_fills.len().max(ref_fills.len());
-    if total_fills > 0 {
-        let fill_similarity = common_fills as f64 / total_fills as f64;
-        score -= (1.0 - fill_similarity) * 0.05;
-    }
-
-    // Visual shape penalty (max 10%)
-    // Only compare key visual shapes - many element differences are structural (invisible placeholders)
-    // Use a lenient ratio comparison: within 2x is acceptable for structural differences
-    let ref_core_shapes = (ref_metrics.rect_count
-        + ref_metrics.circle_count
-        + ref_metrics.polygon_count
-        + ref_metrics.ellipse_count) as f64;
-    let rs_core_shapes = (rs.rect_count
-        + rs.circle_count
-        + rs.polygon_count
-        + rs.ellipse_count) as f64;
-
-    if ref_core_shapes > 0.0 {
-        let shape_ratio = rs_core_shapes / ref_core_shapes;
-        // Only penalize if significantly different (outside 0.5-2.0 range)
-        let shape_diff = if shape_ratio >= 0.5 && shape_ratio <= 2.0 {
-            0.0
-        } else {
-            (shape_ratio - 1.0).abs().min(1.0)
-        };
-        score -= shape_diff * 0.10;
+        score -= (1.0 - text_similarity) * 0.3;
     }
 
     score.max(0.0)
@@ -548,7 +519,11 @@ fn generate_html_report(results: &[ComparisonResult], output_path: &Path) -> std
     let high_similarity = results.iter().filter(|r| r.similarity_score >= 0.9).count();
     let has_critical = results
         .iter()
-        .filter(|r| r.differences.iter().any(|d| matches!(d.severity, Severity::Critical)))
+        .filter(|r| {
+            r.differences
+                .iter()
+                .any(|d| matches!(d.severity, Severity::Critical))
+        })
         .count();
     let avg_similarity: f64 =
         results.iter().map(|r| r.similarity_score).sum::<f64>() / total.max(1) as f64;
@@ -678,7 +653,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("{}", separator);
     println!();
 
-    let diagrams = ["flowchart", "pie", "sequence", "class", "state", "er", "gantt"];
+    let diagrams = [
+        "flowchart",
+        "pie",
+        "sequence",
+        "class",
+        "state",
+        "er",
+        "gantt",
+    ];
 
     let mut results = Vec::new();
 
@@ -711,7 +694,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("  No significant differences detected");
         } else {
             for diff in &differences {
-                println!("  [{}] {}: {}", diff.severity.label(), diff.category, diff.description);
+                println!(
+                    "  [{}] {}: {}",
+                    diff.severity.label(),
+                    diff.category,
+                    diff.description
+                );
             }
         }
 
@@ -720,7 +708,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ref_metrics.width, ref_metrics.height, rs_metrics.width, rs_metrics.height
         );
         println!("  Similarity: {:.0}%", similarity * 100.0);
-
 
         results.push(ComparisonResult {
             name: name.to_string(),
@@ -738,7 +725,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let total = results.len();
     let with_diffs = results.iter().filter(|r| !r.differences.is_empty()).count();
-    let avg_sim: f64 = results.iter().map(|r| r.similarity_score).sum::<f64>() / total.max(1) as f64;
+    let avg_sim: f64 =
+        results.iter().map(|r| r.similarity_score).sum::<f64>() / total.max(1) as f64;
 
     println!("\nDiagrams with differences: {}/{}", with_diffs, total);
     println!("Average similarity: {:.0}%", avg_sim * 100.0);
