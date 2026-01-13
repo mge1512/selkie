@@ -13,6 +13,8 @@ pub struct Theme {
     pub secondary_color: String,
     /// Tertiary color (subgraph backgrounds)
     pub tertiary_color: String,
+    /// Cluster/subgraph border color
+    pub cluster_border_color: String,
     /// Edge/line color
     pub line_color: String,
     /// Background color
@@ -32,6 +34,7 @@ impl Default for Theme {
             primary_border_color: "#9370DB".to_string(),
             secondary_color: "#ffffde".to_string(),
             tertiary_color: "#fafafa".to_string(),
+            cluster_border_color: "#aaaa33".to_string(), // Yellow-green for subgraph borders
             line_color: "#333333".to_string(),
             background: "#ffffff".to_string(),
             font_family: "trebuchet ms, verdana, arial, sans-serif".to_string(),
@@ -49,6 +52,7 @@ impl Theme {
             primary_border_color: "#81B1DB".to_string(),
             secondary_color: "#8a8a8a".to_string(),
             tertiary_color: "#333333".to_string(),
+            cluster_border_color: "#666666".to_string(),
             line_color: "#81B1DB".to_string(),
             background: "#1f2020".to_string(),
             font_family: "trebuchet ms, verdana, arial, sans-serif".to_string(),
@@ -64,6 +68,7 @@ impl Theme {
             primary_border_color: "#666666".to_string(),
             secondary_color: "#e0e0e0".to_string(),
             tertiary_color: "#fafafa".to_string(),
+            cluster_border_color: "#999999".to_string(),
             line_color: "#666666".to_string(),
             background: "#ffffff".to_string(),
             font_family: "trebuchet ms, verdana, arial, sans-serif".to_string(),
@@ -117,8 +122,8 @@ impl Theme {
 }}
 
 .subgraph {{
-  fill: {tertiary_color};
-  stroke: {primary_border_color};
+  fill: {secondary_color};
+  stroke: {cluster_border_color};
   stroke-width: 1px;
 }}
 
@@ -128,8 +133,8 @@ impl Theme {
 }}
 
 .cluster rect {{
-  fill: {tertiary_color};
-  stroke: {primary_border_color};
+  fill: {secondary_color};
+  stroke: {cluster_border_color};
   stroke-width: 1px;
   rx: 5px;
   ry: 5px;
@@ -152,9 +157,10 @@ marker path {{
             primary_color = self.primary_color,
             primary_border_color = self.primary_border_color,
             primary_text_color = self.primary_text_color,
+            secondary_color = self.secondary_color,
+            cluster_border_color = self.cluster_border_color,
             line_color = self.line_color,
             background = self.background,
-            tertiary_color = self.tertiary_color,
         )
     }
 }
