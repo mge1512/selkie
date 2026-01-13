@@ -48,6 +48,8 @@ Selkie supports parsing for all major Mermaid diagram types. Rendering is comple
 
 Flow diagrams with nodes, edges, and subgraphs.
 
+<table><tr><td>
+
 ```mermaid
 flowchart LR
     A[Start] --> B{Decision}
@@ -57,11 +59,15 @@ flowchart LR
     D --> E
 ```
 
-![Flowchart Example](docs/images/flowchart.svg)
+</td><td>
+<img src="docs/images/flowchart.svg" alt="Flowchart Example" width="400">
+</td></tr></table>
 
 ### Sequence Diagram
 
 Sequence diagrams for modeling interactions between participants.
+
+<table><tr><td>
 
 ```mermaid
 sequenceDiagram
@@ -71,11 +77,15 @@ sequenceDiagram
     Bob-->>Alice: Great!
 ```
 
-![Sequence Example](docs/images/sequence.svg)
+</td><td>
+<img src="docs/images/sequence.svg" alt="Sequence Example" width="400">
+</td></tr></table>
 
 ### Class Diagram
 
 UML class diagrams showing relationships and structure.
+
+<table><tr><td>
 
 ```mermaid
 classDiagram
@@ -91,11 +101,15 @@ classDiagram
     }
 ```
 
-![Class Example](docs/images/class.svg)
+</td><td>
+<img src="docs/images/class.svg" alt="Class Example" width="400">
+</td></tr></table>
 
 ### State Diagram
 
 State machine diagrams for modeling system states.
+
+<table><tr><td>
 
 ```mermaid
 stateDiagram-v2
@@ -105,11 +119,15 @@ stateDiagram-v2
     Running --> [*]
 ```
 
-![State Example](docs/images/state.svg)
+</td><td>
+<img src="docs/images/state.svg" alt="State Example" width="400">
+</td></tr></table>
 
 ### Entity Relationship Diagram
 
 ER diagrams for data modeling.
+
+<table><tr><td>
 
 ```mermaid
 erDiagram
@@ -125,11 +143,15 @@ erDiagram
     }
 ```
 
-![ER Example](docs/images/er.svg)
+</td><td>
+<img src="docs/images/er.svg" alt="ER Example" width="400">
+</td></tr></table>
 
 ### Gantt Chart
 
 Project timeline and scheduling charts.
+
+<table><tr><td>
 
 ```mermaid
 gantt
@@ -142,11 +164,15 @@ gantt
     Task C :b1, after a2, 10d
 ```
 
-![Gantt Example](docs/images/gantt.svg)
+</td><td>
+<img src="docs/images/gantt.svg" alt="Gantt Example" width="400">
+</td></tr></table>
 
 ### Pie Chart
 
 Pie charts for proportional data.
+
+<table><tr><td>
 
 ```mermaid
 pie title Languages
@@ -155,7 +181,9 @@ pie title Languages
     "Python" : 25
 ```
 
-![Pie Example](docs/images/pie.svg)
+</td><td>
+<img src="docs/images/pie.svg" alt="Pie Example" width="400">
+</td></tr></table>
 
 ### Additional Diagram Types (Parser Only)
 
