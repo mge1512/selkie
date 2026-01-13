@@ -7,12 +7,20 @@ use super::elements::{Attrs, SvgElement};
 use super::markers;
 use super::theme::Theme;
 
-/// Render an edge
-pub fn render_edge(layout_edge: &LayoutEdge, flow_edge: &FlowEdge, _theme: &Theme) -> SvgElement {
-    let mut elements = Vec::new();
+/// Result of rendering an edge - separate path and label for container groups
+pub struct EdgeRenderResult {
+    /// The edge path element (goes in edgePaths container)
+    pub path: Option<SvgElement>,
+    /// The edge label element (goes in edgeLabels container)
+    pub label: Option<SvgElement>,
+}
 
-    // Build path from bend points - use curved path for smooth corners
-    if !layout_edge.bend_points.is_empty() {
+/// Render an edge with separate path and label for container groups
+pub fn render_edge_parts(layout_edge: &LayoutEdge, flow_edge: &FlowEdge, _theme: &Theme) -> EdgeRenderResult {
+    let edge_id = &layout_edge.id;
+
+    // Build edge path
+    let path = if !layout_edge.bend_points.is_empty() {
         let path_d = build_curved_path(&layout_edge.bend_points);
 
         let mut attrs = Attrs::new()
@@ -22,7 +30,7 @@ pub fn render_edge(layout_edge: &LayoutEdge, flow_edge: &FlowEdge, _theme: &Them
         // Apply stroke style
         match flow_edge.stroke {
             EdgeStroke::Normal => {
-                attrs = attrs.with_stroke_width(1.0);  // mermaid.js uses 1px
+                attrs = attrs.with_stroke_width(1.0);
             }
             EdgeStroke::Thick => {
                 attrs = attrs.with_stroke_width(3.5);
@@ -45,24 +53,32 @@ pub fn render_edge(layout_edge: &LayoutEdge, flow_edge: &FlowEdge, _theme: &Them
             attrs = attrs.with_attr("marker-start", &start_marker_url);
         }
 
-        elements.push(SvgElement::path(path_d).with_attrs(attrs));
-    }
+        let path_element = SvgElement::path(path_d).with_attrs(attrs);
+        let group_attrs = Attrs::new()
+            .with_class("edge")
+            .with_id(&format!("edge-{}", edge_id));
+        Some(SvgElement::group(vec![path_element]).with_attrs(group_attrs))
+    } else {
+        None
+    };
 
-    // Add label if present
-    if !flow_edge.text.is_empty() {
+    // Build edge label
+    let label = if !flow_edge.text.is_empty() {
         if let Some(label_pos) = &layout_edge.label_position {
-            // Estimate text width (approximately 8px per character for typical fonts)
-            let text_width = flow_edge.text.len() as f64 * 8.0;
-            let text_height = 16.0; // Typical line height
-            let padding = 4.0; // Padding around the text
+            let mut label_elements = Vec::new();
 
-            // Add background rect first (translucent gray like mermaid.js)
+            // Estimate text width
+            let text_width = flow_edge.text.len() as f64 * 8.0;
+            let text_height = 16.0;
+            let padding = 4.0;
+
+            // Background rect
             let bg_attrs = Attrs::new()
                 .with_class("edge-label-bg")
                 .with_fill("#e8e8e8")
                 .with_attr("fill-opacity", "0.8");
 
-            elements.push(
+            label_elements.push(
                 SvgElement::rect(
                     label_pos.x - text_width / 2.0 - padding,
                     label_pos.y - text_height / 2.0 - padding / 2.0,
@@ -72,24 +88,29 @@ pub fn render_edge(layout_edge: &LayoutEdge, flow_edge: &FlowEdge, _theme: &Them
                 .with_attrs(bg_attrs),
             );
 
-            // Then add the text on top
+            // Text element
             let label_attrs = Attrs::new()
                 .with_class("edge-label")
                 .with_attr("text-anchor", "middle")
                 .with_attr("dominant-baseline", "central");
 
-            elements.push(
+            label_elements.push(
                 SvgElement::text(label_pos.x, label_pos.y, &flow_edge.text)
                     .with_attrs(label_attrs),
             );
+
+            let group_attrs = Attrs::new()
+                .with_class("edgeLabel")
+                .with_id(&format!("edge-label-{}", edge_id));
+            Some(SvgElement::group(label_elements).with_attrs(group_attrs))
+        } else {
+            None
         }
-    }
+    } else {
+        None
+    };
 
-    let group_attrs = Attrs::new()
-        .with_class("edge")
-        .with_id(&format!("edge-{}", layout_edge.id));
-
-    SvgElement::group(elements).with_attrs(group_attrs)
+    EdgeRenderResult { path, label }
 }
 
 /// Build SVG path from bend points (straight lines)
@@ -312,19 +333,22 @@ mod tests {
         };
 
         let theme = Theme::default();
-        let edge_element = render_edge(&layout_edge, &flow_edge, &theme);
-        let svg = edge_element.to_svg(0);
+        let result = render_edge_parts(&layout_edge, &flow_edge, &theme);
+
+        // The label should exist
+        assert!(result.label.is_some(), "Edge should have a label element");
+        let label_svg = result.label.unwrap().to_svg(0);
 
         // Edge label should have a background rect before the text
         assert!(
-            svg.contains("<rect") && svg.contains("<text"),
+            label_svg.contains("<rect") && label_svg.contains("<text"),
             "Edge label should have background rect, got: {}",
-            svg
+            label_svg
         );
 
         // The rect should have some opacity for the translucent background
         assert!(
-            svg.contains("opacity") || svg.contains("fill-opacity"),
+            label_svg.contains("opacity") || label_svg.contains("fill-opacity"),
             "Edge label background should have opacity for translucent effect"
         );
     }

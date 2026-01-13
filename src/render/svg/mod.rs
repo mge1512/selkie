@@ -67,27 +67,14 @@ impl SvgRenderer {
         // Add marker definitions
         doc.add_defs(markers::create_arrow_markers(&self.config.theme));
 
-        // Render subgraphs first (so they appear behind nodes)
+        // Render subgraphs to clusters container (rendered first, behind everything)
         for subgraph in db.subgraphs() {
             if let Some(element) = self.render_subgraph(subgraph, graph) {
-                doc.add_element(element);
+                doc.add_cluster(element);
             }
         }
 
-        // Render nodes
-        for node in &graph.nodes {
-            if node.is_dummy {
-                continue;
-            }
-
-            // Get the original vertex info
-            if let Some(vertex) = db.vertices().get(&node.id) {
-                let shape_element = shapes::render_shape(node, vertex, &self.config.theme);
-                doc.add_element(shape_element);
-            }
-        }
-
-        // Render edges
+        // Render edges - paths and labels go to separate containers
         for edge in &graph.edges {
             // Skip dummy edges
             if edge.id.contains("_dummy_") {
@@ -100,8 +87,26 @@ impl SvgRenderer {
                     || (e.start == edge.sources.first().map(|s| s.as_str()).unwrap_or("")
                         && e.end == edge.targets.first().map(|s| s.as_str()).unwrap_or(""))
             }) {
-                let edge_element = edges::render_edge(edge, flow_edge, &self.config.theme);
-                doc.add_element(edge_element);
+                let result = edges::render_edge_parts(edge, flow_edge, &self.config.theme);
+                if let Some(path) = result.path {
+                    doc.add_edge_path(path);
+                }
+                if let Some(label) = result.label {
+                    doc.add_edge_label(label);
+                }
+            }
+        }
+
+        // Render nodes to nodes container (rendered last, on top)
+        for node in &graph.nodes {
+            if node.is_dummy {
+                continue;
+            }
+
+            // Get the original vertex info
+            if let Some(vertex) = db.vertices().get(&node.id) {
+                let shape_element = shapes::render_shape(node, vertex, &self.config.theme);
+                doc.add_node(shape_element);
             }
         }
 
@@ -305,6 +310,63 @@ mod tests {
             "Subgraph rect y ({}) should be within viewBox (origin y={})",
             rect_y,
             vb_y
+        );
+    }
+
+    #[test]
+    fn test_svg_has_container_groups() {
+        use crate::diagrams::flowchart::parse;
+        use crate::layout;
+        use crate::layout::CharacterSizeEstimator;
+        use crate::layout::ToLayoutGraph;
+
+        let input = r#"flowchart TB
+    A[Start] --> B[End]"#;
+
+        let db = parse(input).unwrap();
+        let estimator = CharacterSizeEstimator::default();
+        let graph = db.to_layout_graph(&estimator).unwrap();
+        let graph = layout::layout(graph).unwrap();
+
+        let renderer = SvgRenderer::new(RenderConfig::default());
+        let svg = renderer.render_flowchart(&db, &graph).unwrap();
+
+        // Verify container groups exist in correct order: clusters, edgePaths, edgeLabels, nodes
+        // mermaid.js uses this structure for proper layering
+        assert!(
+            svg.contains(r#"<g class="clusters">"#),
+            "SVG should have clusters container group"
+        );
+        assert!(
+            svg.contains(r#"<g class="edgePaths">"#),
+            "SVG should have edgePaths container group"
+        );
+        assert!(
+            svg.contains(r#"<g class="edgeLabels">"#),
+            "SVG should have edgeLabels container group"
+        );
+        assert!(
+            svg.contains(r#"<g class="nodes">"#),
+            "SVG should have nodes container group"
+        );
+
+        // Verify order by checking that clusters appears before nodes in the SVG
+        let clusters_pos = svg.find(r#"class="clusters""#).expect("clusters not found");
+        let edge_paths_pos = svg.find(r#"class="edgePaths""#).expect("edgePaths not found");
+        let edge_labels_pos = svg.find(r#"class="edgeLabels""#).expect("edgeLabels not found");
+        let nodes_pos = svg.find(r#"class="nodes""#).expect("nodes not found");
+
+        assert!(
+            clusters_pos < edge_paths_pos,
+            "clusters should appear before edgePaths"
+        );
+        assert!(
+            edge_paths_pos < edge_labels_pos,
+            "edgePaths should appear before edgeLabels"
+        );
+        assert!(
+            edge_labels_pos < nodes_pos,
+            "edgeLabels should appear before nodes"
         );
     }
 
