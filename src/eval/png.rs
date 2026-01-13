@@ -3,8 +3,6 @@
 //! This module provides SVG to PNG conversion and visual comparison
 //! using SSIM (Structural Similarity Index).
 
-use super::ssim::{calculate_ssim_with_resize, rgba_to_grayscale};
-use std::fs;
 use std::path::Path;
 
 /// Result of visual comparison between two images
