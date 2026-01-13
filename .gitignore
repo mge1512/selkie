@@ -1,1 +1,21 @@
 target/
+
+# Node.js
+node_modules/
+
+# Playwright MCP screenshots
+.playwright-mcp/
+
+# Generated gallery output
+tools/gallery/output/
+
+# Editor/IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
