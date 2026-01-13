@@ -352,7 +352,7 @@ mod tests {
         // Nodes should be separated by at least nodesep
         let a_right = a.x.unwrap() + a.width / 2.0;
         let b_left = b.x.unwrap() - b.width / 2.0;
-        let separation = (b_left - a_right).abs().min((a.x.unwrap() - b.x.unwrap()).abs() - (a.width + b.width) / 2.0);
+        let _separation = (b_left - a_right).abs().min((a.x.unwrap() - b.x.unwrap()).abs() - (a.width + b.width) / 2.0);
         // Note: disconnected nodes may be placed closer than nodesep - just verify they don't overlap
         assert!(a.x != b.x, "Nodes should have different x positions");
     }
