@@ -44,11 +44,15 @@ Selkie could not exist without all the human effort that has gone into these exc
 
 Selkie supports parsing for all major Mermaid diagram types. Rendering is complete for core diagram types, with others in progress.
 
-### Flowchart
-
-Flow diagrams with nodes, edges, and subgraphs.
-
-<table><tr><td>
+<table>
+<tr>
+<th>Diagram Type</th>
+<th>Code</th>
+<th>Output</th>
+</tr>
+<tr>
+<td><strong>Flowchart</strong><br><sub>Nodes, edges, subgraphs</sub></td>
+<td>
 
 ```mermaid
 flowchart LR
@@ -59,15 +63,12 @@ flowchart LR
     D --> E
 ```
 
-</td><td>
-<img src="docs/images/flowchart.svg" alt="Flowchart Example" width="400">
-</td></tr></table>
-
-### Sequence Diagram
-
-Sequence diagrams for modeling interactions between participants.
-
-<table><tr><td>
+</td>
+<td><img src="docs/images/flowchart.svg" alt="Flowchart" width="350"></td>
+</tr>
+<tr>
+<td><strong>Sequence</strong><br><sub>Participant interactions</sub></td>
+<td>
 
 ```mermaid
 sequenceDiagram
@@ -77,15 +78,12 @@ sequenceDiagram
     Bob-->>Alice: Great!
 ```
 
-</td><td>
-<img src="docs/images/sequence.svg" alt="Sequence Example" width="400">
-</td></tr></table>
-
-### Class Diagram
-
-UML class diagrams showing relationships and structure.
-
-<table><tr><td>
+</td>
+<td><img src="docs/images/sequence.svg" alt="Sequence" width="350"></td>
+</tr>
+<tr>
+<td><strong>Class</strong><br><sub>UML relationships</sub></td>
+<td>
 
 ```mermaid
 classDiagram
@@ -101,15 +99,12 @@ classDiagram
     }
 ```
 
-</td><td>
-<img src="docs/images/class.svg" alt="Class Example" width="400">
-</td></tr></table>
-
-### State Diagram
-
-State machine diagrams for modeling system states.
-
-<table><tr><td>
+</td>
+<td><img src="docs/images/class.svg" alt="Class" width="350"></td>
+</tr>
+<tr>
+<td><strong>State</strong><br><sub>State machines</sub></td>
+<td>
 
 ```mermaid
 stateDiagram-v2
@@ -119,15 +114,12 @@ stateDiagram-v2
     Running --> [*]
 ```
 
-</td><td>
-<img src="docs/images/state.svg" alt="State Example" width="400">
-</td></tr></table>
-
-### Entity Relationship Diagram
-
-ER diagrams for data modeling.
-
-<table><tr><td>
+</td>
+<td><img src="docs/images/state.svg" alt="State" width="350"></td>
+</tr>
+<tr>
+<td><strong>ER Diagram</strong><br><sub>Data modeling</sub></td>
+<td>
 
 ```mermaid
 erDiagram
@@ -143,15 +135,12 @@ erDiagram
     }
 ```
 
-</td><td>
-<img src="docs/images/er.svg" alt="ER Example" width="400">
-</td></tr></table>
-
-### Gantt Chart
-
-Project timeline and scheduling charts.
-
-<table><tr><td>
+</td>
+<td><img src="docs/images/er.svg" alt="ER" width="350"></td>
+</tr>
+<tr>
+<td><strong>Gantt</strong><br><sub>Project timelines</sub></td>
+<td>
 
 ```mermaid
 gantt
@@ -164,15 +153,12 @@ gantt
     Task C :b1, after a2, 10d
 ```
 
-</td><td>
-<img src="docs/images/gantt.svg" alt="Gantt Example" width="400">
-</td></tr></table>
-
-### Pie Chart
-
-Pie charts for proportional data.
-
-<table><tr><td>
+</td>
+<td><img src="docs/images/gantt.svg" alt="Gantt" width="350"></td>
+</tr>
+<tr>
+<td><strong>Pie Chart</strong><br><sub>Proportional data</sub></td>
+<td>
 
 ```mermaid
 pie title Languages
@@ -181,9 +167,10 @@ pie title Languages
     "Python" : 25
 ```
 
-</td><td>
-<img src="docs/images/pie.svg" alt="Pie Example" width="400">
-</td></tr></table>
+</td>
+<td><img src="docs/images/pie.svg" alt="Pie" width="350"></td>
+</tr>
+</table>
 
 ### Additional Diagram Types (Parser Only)
 
