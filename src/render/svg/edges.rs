@@ -16,16 +16,18 @@ pub struct EdgeRenderResult {
 }
 
 /// Render an edge with separate path and label for container groups
-pub fn render_edge_parts(layout_edge: &LayoutEdge, flow_edge: &FlowEdge, _theme: &Theme) -> EdgeRenderResult {
+pub fn render_edge_parts(
+    layout_edge: &LayoutEdge,
+    flow_edge: &FlowEdge,
+    _theme: &Theme,
+) -> EdgeRenderResult {
     let edge_id = &layout_edge.id;
 
     // Build edge path
     let path = if !layout_edge.bend_points.is_empty() {
         let path_d = build_curved_path(&layout_edge.bend_points);
 
-        let mut attrs = Attrs::new()
-            .with_class("edge-path")
-            .with_fill("none");
+        let mut attrs = Attrs::new().with_class("edge-path").with_fill("none");
 
         // Apply stroke style
         match flow_edge.stroke {
@@ -36,9 +38,7 @@ pub fn render_edge_parts(layout_edge: &LayoutEdge, flow_edge: &FlowEdge, _theme:
                 attrs = attrs.with_stroke_width(3.5);
             }
             EdgeStroke::Dotted => {
-                attrs = attrs
-                    .with_stroke_width(2.0)
-                    .with_stroke_dasharray("3,3");
+                attrs = attrs.with_stroke_width(2.0).with_stroke_dasharray("3,3");
             }
             EdgeStroke::Invisible => {
                 attrs = attrs.with_stroke_width(0.0);
@@ -49,7 +49,9 @@ pub fn render_edge_parts(layout_edge: &LayoutEdge, flow_edge: &FlowEdge, _theme:
         if let Some(marker_url) = markers::get_marker_url(flow_edge.edge_type.as_deref()) {
             attrs = attrs.with_attr("marker-end", &marker_url);
         }
-        if let Some(start_marker_url) = markers::get_start_marker_url(flow_edge.edge_type.as_deref()) {
+        if let Some(start_marker_url) =
+            markers::get_start_marker_url(flow_edge.edge_type.as_deref())
+        {
             attrs = attrs.with_attr("marker-start", &start_marker_url);
         }
 
@@ -95,8 +97,7 @@ pub fn render_edge_parts(layout_edge: &LayoutEdge, flow_edge: &FlowEdge, _theme:
                 .with_attr("dominant-baseline", "central");
 
             label_elements.push(
-                SvgElement::text(label_pos.x, label_pos.y, &flow_edge.text)
-                    .with_attrs(label_attrs),
+                SvgElement::text(label_pos.x, label_pos.y, &flow_edge.text).with_attrs(label_attrs),
             );
 
             let group_attrs = Attrs::new()
@@ -146,7 +147,10 @@ fn build_curved_path(points: &[crate::layout::Point]) -> String {
 
     if points.len() == 2 {
         // For 2 points, use a straight line
-        return format!("M {} {} L {} {}", points[0].x, points[0].y, points[1].x, points[1].y);
+        return format!(
+            "M {} {} L {} {}",
+            points[0].x, points[0].y, points[1].x, points[1].y
+        );
     }
 
     // Use basis spline interpolation (like d3's curveBasis)
@@ -184,14 +188,20 @@ fn build_basis_path(points: &[crate::layout::Point]) -> String {
         let y2 = (points[0].y + 2.0 * points[1].y) / 3.0;
         let x3 = (points[0].x + 4.0 * points[1].x + points[2].x) / 6.0;
         let y3 = (points[0].y + 4.0 * points[1].y + points[2].y) / 6.0;
-        d.push_str(&format!(" C {:.2} {:.2}, {:.2} {:.2}, {:.2} {:.2}", x1, y1, x2, y2, x3, y3));
+        d.push_str(&format!(
+            " C {:.2} {:.2}, {:.2} {:.2}, {:.2} {:.2}",
+            x1, y1, x2, y2, x3, y3
+        ));
 
         // Finish to end point
         let x4 = (2.0 * points[1].x + points[2].x) / 3.0;
         let y4 = (2.0 * points[1].y + points[2].y) / 3.0;
         let x5 = (points[1].x + 2.0 * points[2].x) / 3.0;
         let y5 = (points[1].y + 2.0 * points[2].y) / 3.0;
-        d.push_str(&format!(" C {:.2} {:.2}, {:.2} {:.2}, {:.2} {:.2}", x4, y4, x5, y5, points[2].x, points[2].y));
+        d.push_str(&format!(
+            " C {:.2} {:.2}, {:.2} {:.2}, {:.2} {:.2}",
+            x4, y4, x5, y5, points[2].x, points[2].y
+        ));
         return d;
     }
 
@@ -203,7 +213,10 @@ fn build_basis_path(points: &[crate::layout::Point]) -> String {
     let y2 = (points[0].y + 2.0 * points[1].y) / 3.0;
     let x3 = (points[0].x + 4.0 * points[1].x + points[2].x) / 6.0;
     let y3 = (points[0].y + 4.0 * points[1].y + points[2].y) / 6.0;
-    d.push_str(&format!(" C {:.2} {:.2}, {:.2} {:.2}, {:.2} {:.2}", x1, y1, x2, y2, x3, y3));
+    d.push_str(&format!(
+        " C {:.2} {:.2}, {:.2} {:.2}, {:.2} {:.2}",
+        x1, y1, x2, y2, x3, y3
+    ));
 
     // Middle segments (cubic)
     for i in 2..n - 1 {
@@ -219,7 +232,10 @@ fn build_basis_path(points: &[crate::layout::Point]) -> String {
         let x3 = (p1.x + 4.0 * p2.x + p3.x) / 6.0;
         let y3 = (p1.y + 4.0 * p2.y + p3.y) / 6.0;
 
-        d.push_str(&format!(" C {:.2} {:.2}, {:.2} {:.2}, {:.2} {:.2}", x1, y1, x2, y2, x3, y3));
+        d.push_str(&format!(
+            " C {:.2} {:.2}, {:.2} {:.2}, {:.2} {:.2}",
+            x1, y1, x2, y2, x3, y3
+        ));
     }
 
     // Last segment (end at final point)
@@ -227,8 +243,10 @@ fn build_basis_path(points: &[crate::layout::Point]) -> String {
     let p_prev = &points[n - 2];
     let x1 = (p_prev.x + 2.0 * p_last.x) / 3.0;
     let y1 = (p_prev.y + 2.0 * p_last.y) / 3.0;
-    d.push_str(&format!(" C {:.2} {:.2}, {:.2} {:.2}, {:.2} {:.2}",
-                       x1, y1, p_last.x, p_last.y, p_last.x, p_last.y));
+    d.push_str(&format!(
+        " C {:.2} {:.2}, {:.2} {:.2}, {:.2} {:.2}",
+        x1, y1, p_last.x, p_last.y, p_last.x, p_last.y
+    ));
 
     d
 }
@@ -279,16 +297,16 @@ mod tests {
         );
         // Should NOT be all straight lines
         let l_count = path.matches(" L ").count();
-        assert!(l_count < points.len() - 1, "Curved path should not use only L commands");
+        assert!(
+            l_count < points.len() - 1,
+            "Curved path should not use only L commands"
+        );
     }
 
     #[test]
     fn test_build_curved_path_two_points() {
         // With only two points, should be a straight line (no curve possible)
-        let points = vec![
-            Point::new(0.0, 0.0),
-            Point::new(100.0, 100.0),
-        ];
+        let points = vec![Point::new(0.0, 0.0), Point::new(100.0, 100.0)];
 
         let path = build_curved_path(&points);
         assert!(path.starts_with("M"));
@@ -297,7 +315,7 @@ mod tests {
 
     #[test]
     fn test_edge_label_has_background_rect() {
-        use crate::diagrams::flowchart::{FlowEdge, EdgeStroke, FlowTextType};
+        use crate::diagrams::flowchart::{EdgeStroke, FlowEdge, FlowTextType};
         use std::collections::HashMap;
 
         let layout_edge = LayoutEdge {
@@ -305,10 +323,7 @@ mod tests {
             sources: vec!["a".to_string()],
             targets: vec!["b".to_string()],
             label: Some("label".to_string()),
-            bend_points: vec![
-                Point::new(0.0, 0.0),
-                Point::new(100.0, 100.0),
-            ],
+            bend_points: vec![Point::new(0.0, 0.0), Point::new(100.0, 100.0)],
             label_position: Some(Point::new(50.0, 50.0)),
             weight: 1,
             reversed: false,

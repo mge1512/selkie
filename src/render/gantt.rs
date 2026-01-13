@@ -128,7 +128,7 @@ pub fn render_gantt(db: &mut GanttDb, config: &RenderConfig) -> Result<String> {
     let section_colors = [
         "rgba(102, 102, 255, 0.49)", // section0 - purple
         "rgba(255, 255, 255, 0.2)",  // section1 - white with opacity
-        "#fff400",                    // section2 - yellow
+        "#fff400",                   // section2 - yellow
         "rgba(255, 255, 255, 0.2)",  // section3 - white with opacity
     ];
 
@@ -317,13 +317,17 @@ fn render_timeline_axis(
         y1: y + height,
         x2: x + width,
         y2: y + height,
-        attrs: Attrs::new()
-            .with_stroke("#333333")
-            .with_stroke_width(1.0),
+        attrs: Attrs::new().with_stroke("#333333").with_stroke_width(1.0),
     });
 
     // Grid lines and day markers
-    let tick_interval = if days > 30 { 7 } else if days > 14 { 2 } else { 1 };
+    let tick_interval = if days > 30 {
+        7
+    } else if days > 14 {
+        2
+    } else {
+        1
+    };
 
     if let Some(start) = start_date {
         use chrono::Datelike;
@@ -352,9 +356,7 @@ fn render_timeline_axis(
                 y1: y + height - 5.0,
                 x2: tick_x,
                 y2: y + height,
-                attrs: Attrs::new()
-                    .with_stroke("#333333")
-                    .with_stroke_width(1.0),
+                attrs: Attrs::new().with_stroke("#333333").with_stroke_width(1.0),
             });
 
             // Date label (YYYY-MM-DD format like mermaid.js)

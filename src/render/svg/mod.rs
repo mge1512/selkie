@@ -13,7 +13,7 @@ pub use elements::{Attrs, SvgElement};
 pub use structure::{CompareConfig, ComparisonResult, SvgStructure};
 pub use theme::Theme;
 
-use crate::diagrams::flowchart::{FlowchartDb, FlowSubGraph};
+use crate::diagrams::flowchart::{FlowSubGraph, FlowchartDb};
 use crate::error::Result;
 use crate::layout::LayoutGraph;
 
@@ -115,7 +115,11 @@ impl SvgRenderer {
 
     /// Calculate bounds for the flowchart including subgraph boxes
     /// Returns (min_x, min_y, width, height) for the viewBox
-    fn calculate_flowchart_bounds(&self, db: &FlowchartDb, graph: &LayoutGraph) -> (f64, f64, f64, f64) {
+    fn calculate_flowchart_bounds(
+        &self,
+        db: &FlowchartDb,
+        graph: &LayoutGraph,
+    ) -> (f64, f64, f64, f64) {
         let padding = self.config.padding;
         let subgraph_padding = 20.0;
         let title_height = 25.0;
@@ -282,9 +286,11 @@ mod tests {
         let (vb_x, vb_y, _vb_width, _vb_height) = (parts[0], parts[1], parts[2], parts[3]);
 
         // Extract subgraph rect bounds
-        let rect_re = regex::Regex::new(r#"class="cluster"[^/]*x="([^"]+)"[^/]*y="([^"]+)""#).unwrap();
+        let rect_re =
+            regex::Regex::new(r#"class="cluster"[^/]*x="([^"]+)"[^/]*y="([^"]+)""#).unwrap();
         // Try alternate attribute order
-        let rect_re2 = regex::Regex::new(r#"<rect x="([^"]+)" y="([^"]+)"[^>]*class="cluster""#).unwrap();
+        let rect_re2 =
+            regex::Regex::new(r#"<rect x="([^"]+)" y="([^"]+)"[^>]*class="cluster""#).unwrap();
 
         let (rect_x, rect_y) = rect_re
             .captures(&svg)
@@ -352,8 +358,12 @@ mod tests {
 
         // Verify order by checking that clusters appears before nodes in the SVG
         let clusters_pos = svg.find(r#"class="clusters""#).expect("clusters not found");
-        let edge_paths_pos = svg.find(r#"class="edgePaths""#).expect("edgePaths not found");
-        let edge_labels_pos = svg.find(r#"class="edgeLabels""#).expect("edgeLabels not found");
+        let edge_paths_pos = svg
+            .find(r#"class="edgePaths""#)
+            .expect("edgePaths not found");
+        let edge_labels_pos = svg
+            .find(r#"class="edgeLabels""#)
+            .expect("edgeLabels not found");
         let nodes_pos = svg.find(r#"class="nodes""#).expect("nodes not found");
 
         assert!(
@@ -397,7 +407,9 @@ mod tests {
         );
 
         // Extract rect bounds and text x position
-        let rect_re = regex::Regex::new(r#"<rect x="([^"]+)"[^>]*width="([^"]+)"[^>]*class="cluster""#).unwrap();
+        let rect_re =
+            regex::Regex::new(r#"<rect x="([^"]+)"[^>]*width="([^"]+)"[^>]*class="cluster""#)
+                .unwrap();
 
         // If we can find both, verify the text is approximately centered
         if let Some(rect_caps) = rect_re.captures(&svg) {
@@ -406,7 +418,8 @@ mod tests {
             let rect_center = rect_x + rect_width / 2.0;
 
             // Text x position should be near center (within 10% of width)
-            let text_x_re = regex::Regex::new(r#"<text x="([^"]+)"[^>]*class="cluster-label""#).unwrap();
+            let text_x_re =
+                regex::Regex::new(r#"<text x="([^"]+)"[^>]*class="cluster-label""#).unwrap();
             if let Some(text_caps) = text_x_re.captures(&svg) {
                 let text_x: f64 = text_caps.get(1).unwrap().as_str().parse().unwrap();
                 let tolerance = rect_width * 0.4; // 40% tolerance since left-aligned is clearly wrong
