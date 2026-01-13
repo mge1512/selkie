@@ -94,6 +94,16 @@ struct Args {
     /// Show verbose output
     #[arg(short, long)]
     verbose: bool,
+
+    /// Display diagram directly in terminal (requires kitty/ghostty)
+    #[cfg(feature = "kitty")]
+    #[arg(short = 'd', long)]
+    display: bool,
+
+    /// Force terminal display even if kitty support is not detected
+    #[cfg(feature = "kitty")]
+    #[arg(long)]
+    force_display: bool,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
@@ -102,6 +112,9 @@ enum ThemeArg {
     Dark,
     Forest,
     Neutral,
+    /// Auto-detect based on terminal background color
+    #[cfg(feature = "kitty")]
+    Auto,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
@@ -184,6 +197,21 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         ThemeArg::Dark => Theme::dark(),
         ThemeArg::Forest => Theme::forest(),
         ThemeArg::Neutral => Theme::neutral(),
+        #[cfg(feature = "kitty")]
+        ThemeArg::Auto => {
+            // Auto-detect based on terminal background
+            if mermaid::kitty::is_terminal_dark() {
+                if args.verbose {
+                    eprintln!("Auto-detected dark terminal, using dark theme");
+                }
+                Theme::dark()
+            } else {
+                if args.verbose {
+                    eprintln!("Auto-detected light terminal, using default theme");
+                }
+                Theme::default()
+            }
+        }
     };
 
     // Apply theme variables from config file
@@ -250,6 +278,48 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
 
     if args.verbose {
         eprintln!("Rendered {} bytes of SVG", svg.len());
+    }
+
+    // Handle terminal display mode
+    #[cfg(feature = "kitty")]
+    if args.display || args.force_display {
+        // Check for kitty support
+        if !args.force_display && !mermaid::kitty::is_supported() {
+            return Err("Terminal does not support kitty graphics protocol. Use --force-display to override.".into());
+        }
+
+        if args.verbose {
+            eprintln!("Displaying diagram in terminal using kitty graphics protocol");
+        }
+
+        // Convert to PNG for display
+        let png_data = svg_to_png(&svg, args.width, args.height)?;
+        mermaid::kitty::display_png(&png_data)
+            .map_err(|e| format!("Failed to display image: {}", e))?;
+
+        // Also write to file if output was specified
+        if let Some(ref output) = args.output {
+            if output != "-" {
+                let format = args.output_format.unwrap_or_else(|| {
+                    OutputFormat::from_extension(output).unwrap_or(OutputFormat::Svg)
+                });
+                match format {
+                    OutputFormat::Svg => write_output(&Some(output.clone()), svg.as_bytes())?,
+                    #[cfg(feature = "png")]
+                    OutputFormat::Png => write_binary_output(&Some(output.clone()), &png_data)?,
+                    #[cfg(feature = "pdf")]
+                    OutputFormat::Pdf => {
+                        let pdf_data = svg_to_pdf(&svg)?;
+                        write_binary_output(&Some(output.clone()), &pdf_data)?;
+                    }
+                }
+                if !args.quiet {
+                    eprintln!("Created {}", output);
+                }
+            }
+        }
+
+        return Ok(());
     }
 
     // Determine output format
