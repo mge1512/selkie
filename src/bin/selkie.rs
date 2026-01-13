@@ -539,7 +539,9 @@ fn run_eval(args: EvalArgs) -> Result<(), Box<dyn std::error::Error>> {
         }
         #[cfg(not(feature = "png"))]
         {
-            eprintln!("PNG generation requires the 'png' feature. Build with: cargo build --features png");
+            eprintln!(
+                "PNG generation requires the 'png' feature. Build with: cargo build --features png"
+            );
             let _ = path; // Suppress unused warning
         }
     }

@@ -121,7 +121,10 @@ fn dfs(
         // Get child's border nodes (or the child itself if it's a leaf)
         let (child_top, child_bottom) = {
             let child_node = g.node(child).cloned().unwrap_or_default();
-            let ct = child_node.border_top.clone().unwrap_or_else(|| child.clone());
+            let ct = child_node
+                .border_top
+                .clone()
+                .unwrap_or_else(|| child.clone());
             let cb = child_node
                 .border_bottom
                 .clone()

@@ -148,8 +148,10 @@ pub fn run(g: &mut DagreGraph) {
     let max_iterations = g.node_count() * g.edge_count() + 1; // dagre.js uses this formula
 
     // Track exchanges for cycle detection - count how many times each exchange occurs
-    let mut exchange_counts: std::collections::HashMap<((String, String), (String, String)), usize> =
-        std::collections::HashMap::new();
+    let mut exchange_counts: std::collections::HashMap<
+        ((String, String), (String, String)),
+        usize,
+    > = std::collections::HashMap::new();
 
     while let Some(leave) = leave_edge(&tree) {
         if iterations >= max_iterations {
@@ -288,7 +290,10 @@ pub fn init_low_lim_values(tree: &mut SpanningTree, root: Option<String>) {
 fn dfs_assign(tree: &mut SpanningTree, v: &str, parent: Option<&str>, counter: &mut i32) {
     // Check recursion depth to detect infinite recursion
     if *counter > 1000 {
-        eprintln!("[dfs_assign] OVERFLOW: counter={}, v={}, parent={:?}", counter, v, parent);
+        eprintln!(
+            "[dfs_assign] OVERFLOW: counter={}, v={}, parent={:?}",
+            counter, v, parent
+        );
         panic!("dfs_assign recursion overflow");
     }
 

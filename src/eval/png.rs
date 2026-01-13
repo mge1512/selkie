@@ -27,7 +27,8 @@ pub fn svg_to_png(svg: &str) -> Result<(Vec<u8>, u32, u32), String> {
     opt.fontdb_mut().load_system_fonts();
 
     // Parse SVG
-    let tree = usvg::Tree::from_str(svg, &opt).map_err(|e| format!("Failed to parse SVG: {}", e))?;
+    let tree =
+        usvg::Tree::from_str(svg, &opt).map_err(|e| format!("Failed to parse SVG: {}", e))?;
 
     // Get the size
     let size = tree.size();
@@ -42,7 +43,11 @@ pub fn svg_to_png(svg: &str) -> Result<(Vec<u8>, u32, u32), String> {
     pixmap.fill(tiny_skia::Color::WHITE);
 
     // Render
-    resvg::render(&tree, tiny_skia::Transform::identity(), &mut pixmap.as_mut());
+    resvg::render(
+        &tree,
+        tiny_skia::Transform::identity(),
+        &mut pixmap.as_mut(),
+    );
 
     // Encode to PNG
     let png_data = pixmap
@@ -63,7 +68,8 @@ pub fn svg_to_rgba(svg: &str) -> Result<(Vec<u8>, u32, u32), String> {
     opt.fontdb_mut().load_system_fonts();
 
     // Parse SVG
-    let tree = usvg::Tree::from_str(svg, &opt).map_err(|e| format!("Failed to parse SVG: {}", e))?;
+    let tree =
+        usvg::Tree::from_str(svg, &opt).map_err(|e| format!("Failed to parse SVG: {}", e))?;
 
     // Get the size
     let size = tree.size();
@@ -78,7 +84,11 @@ pub fn svg_to_rgba(svg: &str) -> Result<(Vec<u8>, u32, u32), String> {
     pixmap.fill(tiny_skia::Color::WHITE);
 
     // Render
-    resvg::render(&tree, tiny_skia::Transform::identity(), &mut pixmap.as_mut());
+    resvg::render(
+        &tree,
+        tiny_skia::Transform::identity(),
+        &mut pixmap.as_mut(),
+    );
 
     // Get RGBA data
     Ok((pixmap.data().to_vec(), width, height))
@@ -163,7 +173,12 @@ pub fn create_comparison_png(
 
     // Draw divider using fill_rect
     let divider_x = (sw + padding * 2) as f32;
-    let divider_rect = Rect::from_xywh(divider_x, padding as f32, divider_width as f32, max_height as f32);
+    let divider_rect = Rect::from_xywh(
+        divider_x,
+        padding as f32,
+        divider_width as f32,
+        max_height as f32,
+    );
     if let Some(rect) = divider_rect {
         let mut paint = Paint::default();
         paint.set_color_rgba8(100, 100, 100, 255);
@@ -275,7 +290,7 @@ pub fn write_comparison_pngs(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    
 
     #[test]
     #[cfg(feature = "png")]
@@ -304,6 +319,9 @@ mod tests {
         assert!(result.is_ok());
 
         let comparison = result.unwrap();
-        assert!(comparison.ssim > 0.99, "Identical SVGs should have SSIM > 0.99");
+        assert!(
+            comparison.ssim > 0.99,
+            "Identical SVGs should have SSIM > 0.99"
+        );
     }
 }
