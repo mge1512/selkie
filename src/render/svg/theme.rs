@@ -38,7 +38,7 @@ impl Default for Theme {
             line_color: "#333333".to_string(),
             background: "#ffffff".to_string(),
             font_family: "trebuchet ms, verdana, arial, sans-serif".to_string(),
-            font_size: "14px".to_string(),
+            font_size: "16px".to_string(),
         }
     }
 }
@@ -56,7 +56,7 @@ impl Theme {
             line_color: "#81B1DB".to_string(),
             background: "#1f2020".to_string(),
             font_family: "trebuchet ms, verdana, arial, sans-serif".to_string(),
-            font_size: "14px".to_string(),
+            font_size: "16px".to_string(),
         }
     }
 
@@ -72,7 +72,7 @@ impl Theme {
             line_color: "#666666".to_string(),
             background: "#ffffff".to_string(),
             font_family: "trebuchet ms, verdana, arial, sans-serif".to_string(),
-            font_size: "14px".to_string(),
+            font_size: "16px".to_string(),
         }
     }
 

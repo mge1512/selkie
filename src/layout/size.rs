@@ -74,15 +74,21 @@ impl SizeEstimator for CharacterSizeEstimator {
         // Apply shape-specific adjustments
         let (width, height) = match shape {
             NodeShape::Circle | NodeShape::DoubleCircle => {
-                // Circle needs diameter = max(width, height)
-                let diameter = base_width.max(base_height);
+                // Circle sizing per mermaid.js circle.ts:
+                // radius = bbox.width / 2 + halfPadding (where halfPadding = node.padding / 2 = 4)
+                // diameter = bbox.width + padding (effectively text_width + 8)
+                let half_padding = config.padding_vertical / 2.0; // 4, matches mermaid's halfPadding
+                let diameter = text_width.max(text_height) + half_padding * 2.0;
                 (diameter, diameter)
             }
             NodeShape::Diamond => {
-                // Diamond is a square rotated 45 degrees, matching mermaid.js:
-                // size = width + height (not scaling, but sum)
-                // This ensures the text fits inside the rotated square
-                let s = base_width + base_height;
+                // Diamond is a square rotated 45 degrees, matching mermaid.js question.ts:
+                // mermaid.js uses single padding (node.padding = 8) for diamonds, not double
+                // w = bbox.width + padding, h = bbox.height + padding, s = w + h
+                let single_padding = config.padding_vertical; // 8, matches mermaid's node.padding
+                let w = text_width + single_padding;
+                let h = text_height + single_padding;
+                let s = w + h;
                 (s, s)
             }
             NodeShape::Hexagon => {
@@ -124,8 +130,19 @@ impl SizeEstimator for CharacterSizeEstimator {
         };
 
         // Apply min/max constraints
-        let final_width = width.max(config.min_width);
-        let final_height = height.max(config.min_height);
+        // For shapes that must be square (circle, diamond), use max of both constraints
+        let (final_width, final_height) = match shape {
+            NodeShape::Circle | NodeShape::DoubleCircle | NodeShape::Diamond => {
+                let min_dim = config.min_width.max(config.min_height);
+                let dim = width.max(min_dim);
+                (dim, dim)
+            }
+            _ => {
+                let w = width.max(config.min_width);
+                let h = height.max(config.min_height);
+                (w, h)
+            }
+        };
         let final_width = config
             .max_width
             .map(|max| final_width.min(max))

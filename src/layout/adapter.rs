@@ -24,7 +24,8 @@ pub struct NodeSizeConfig {
 impl Default for NodeSizeConfig {
     fn default() -> Self {
         Self {
-            font_size: 14.0,
+            // mermaid.js uses 16px as the default node font size
+            font_size: 16.0,
             padding_horizontal: 16.0,
             padding_vertical: 8.0,
             min_width: 50.0,
