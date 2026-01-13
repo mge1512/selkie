@@ -234,8 +234,8 @@ pub fn cleanup(g: &mut DagreGraph) {
     let nesting_edges: Vec<_> = g
         .edges()
         .into_iter()
+        .filter(|&key| g.edge_by_key(key).map(|e| e.nesting_edge).unwrap_or(false))
         .cloned()
-        .filter(|key| g.edge_by_key(key).map(|e| e.nesting_edge).unwrap_or(false))
         .collect();
 
     for key in nesting_edges {
