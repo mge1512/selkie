@@ -401,36 +401,14 @@ pub fn assign_node_intersects(graph: &mut DagreGraph) {
         points.push(end_point);
 
         // For edges with only 2 points (no intermediate dummy nodes from normalization),
-        // add a single midpoint to create a simple curve (not S-curve) like mermaid.js.
-        // The midpoint uses the coordinate of whichever node is FURTHER from graph center.
-        if points.len() == 2 {
-            let mid_point = if is_horizontal {
-                // For LR/RL: use Y of node further from graph center
-                let src_cy = node_v.y.unwrap_or(0.0);
-                let tgt_cy = node_w.y.unwrap_or(0.0);
-                let src_dist = (src_cy - graph_center_y).abs();
-                let tgt_dist = (tgt_cy - graph_center_y).abs();
-                let mid_y = if src_dist >= tgt_dist { start_point.y } else { end_point.y };
-
-                super::graph::Point {
-                    x: (start_point.x + end_point.x) / 2.0,
-                    y: mid_y,
-                }
-            } else {
-                // For TB/BT: use X of node further from graph center
-                let src_cx = node_v.x.unwrap_or(0.0);
-                let tgt_cx = node_w.x.unwrap_or(0.0);
-                let src_dist = (src_cx - graph_center_x).abs();
-                let tgt_dist = (tgt_cx - graph_center_x).abs();
-                let mid_x = if src_dist >= tgt_dist { start_point.x } else { end_point.x };
-
-                super::graph::Point {
-                    x: mid_x,
-                    y: (start_point.y + end_point.y) / 2.0,
-                }
-            };
-            points.insert(1, mid_point);
-        }
+        // we do NOT add a midpoint. This matches dagre's behavior where short edges
+        // (between adjacent ranks) are straight lines from source boundary to target
+        // boundary. The intersection calculation already ensures edges connect at the
+        // correct points (e.g., bottom of source and top of target in TB layout).
+        //
+        // Mermaid.js renders these as straight lines with `curveBasis`, which for 2 points
+        // is just a straight line. Adding artificial midpoints caused edges to curve
+        // excessively and enter nodes from the wrong side (sides instead of top in TB).
 
         // Update edge with new points
         if let Some(edge) = graph.edge_mut(&v, &w) {
