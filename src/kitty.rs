@@ -452,3 +452,96 @@ fn read_with_timeout(fd: c_int, timeout_ms: u64) -> String {
 
     response
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_background_color_luminance() {
+        // Black should have zero luminance
+        let black = BackgroundColor { r: 0, g: 0, b: 0 };
+        assert!(black.luminance() < 1.0);
+
+        // White should have high luminance
+        let white = BackgroundColor {
+            r: 255,
+            g: 255,
+            b: 255,
+        };
+        assert!(white.luminance() > 250.0);
+
+        // Pure green has highest weight in luminance formula
+        let green = BackgroundColor { r: 0, g: 255, b: 0 };
+        let red = BackgroundColor { r: 255, g: 0, b: 0 };
+        assert!(green.luminance() > red.luminance());
+    }
+
+    #[test]
+    fn test_background_color_is_dark() {
+        // Black is dark
+        let black = BackgroundColor { r: 0, g: 0, b: 0 };
+        assert!(black.is_dark());
+
+        // White is not dark
+        let white = BackgroundColor {
+            r: 255,
+            g: 255,
+            b: 255,
+        };
+        assert!(!white.is_dark());
+
+        // Typical dark theme background (#1e1e1e)
+        let dark_bg = BackgroundColor {
+            r: 30,
+            g: 30,
+            b: 30,
+        };
+        assert!(dark_bg.is_dark());
+
+        // Typical light theme background (#f5f5f5)
+        let light_bg = BackgroundColor {
+            r: 245,
+            g: 245,
+            b: 245,
+        };
+        assert!(!light_bg.is_dark());
+    }
+
+    #[test]
+    fn test_parse_rgb_response_standard() {
+        // Standard 16-bit response format
+        let response = "\x1b]11;rgb:1e1e/1e1e/1e1e\x1b\\";
+        let color = parse_rgb_response(response).unwrap();
+        assert_eq!(color.r, 0x1e);
+        assert_eq!(color.g, 0x1e);
+        assert_eq!(color.b, 0x1e);
+    }
+
+    #[test]
+    fn test_parse_rgb_response_white() {
+        let response = "\x1b]11;rgb:ffff/ffff/ffff\x1b\\";
+        let color = parse_rgb_response(response).unwrap();
+        assert_eq!(color.r, 0xff);
+        assert_eq!(color.g, 0xff);
+        assert_eq!(color.b, 0xff);
+    }
+
+    #[test]
+    fn test_parse_rgb_response_invalid() {
+        // No rgb: prefix
+        assert!(parse_rgb_response("invalid response").is_none());
+
+        // Incomplete
+        assert!(parse_rgb_response("rgb:ff/ff").is_none());
+    }
+
+    #[test]
+    fn test_display_error_display() {
+        let decode_err = DisplayError::ImageDecode("test error".to_string());
+        assert!(decode_err.to_string().contains("decode"));
+
+        let write_err = DisplayError::Write("write failed".to_string());
+        assert!(write_err.to_string().contains("write"));
+    }
+}
