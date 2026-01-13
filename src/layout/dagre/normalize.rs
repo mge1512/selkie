@@ -387,57 +387,50 @@ pub fn assign_node_intersects(graph: &mut DagreGraph) {
 
         // For edges with only 2 points (no intermediate dummy nodes),
         // add intermediate points to create smooth curved edges like mermaid.js
-        // mermaid.js uses "elbow" style routing with L-shaped waypoints that get
-        // smoothed by d3's curveBasis into flowing S-curves
+        // Edges should leave perpendicular to their exit side and enter perpendicular to entry side
         if points.len() == 2 {
-            let dx = end_point.x - start_point.x;
-            let dy = end_point.y - start_point.y;
+            // Get node centers
+            let src_cx = node_v.x.unwrap_or(0.0);
+            let src_cy = node_v.y.unwrap_or(0.0);
+            let tgt_cx = node_w.x.unwrap_or(0.0);
+            let tgt_cy = node_w.y.unwrap_or(0.0);
 
-            // For diagonal edges, create elbow-style waypoints
-            // The B-spline interpolation will smooth these into flowing curves
-            // mermaid.js curves START steep (big Y change) and END shallow (horizontal approach)
-            if dx.abs() > 10.0 && dy.abs() > 10.0 {
-                // First intermediate: steep start (more Y progress than X progress)
-                let cp1 = super::graph::Point {
-                    x: start_point.x + dx * 0.10,
-                    y: start_point.y + dy * 0.25,
-                };
+            // Compute exit direction (from source center to intersection point)
+            // This gives us the perpendicular direction to the exit side
+            let exit_dx = start_point.x - src_cx;
+            let exit_dy = start_point.y - src_cy;
+            let exit_len = (exit_dx * exit_dx + exit_dy * exit_dy).sqrt().max(1.0);
+            let exit_nx = exit_dx / exit_len;
+            let exit_ny = exit_dy / exit_len;
 
-                // Second intermediate: still steep, continuing diagonal
-                let cp2 = super::graph::Point {
-                    x: start_point.x + dx * 0.30,
-                    y: start_point.y + dy * 0.55,
-                };
+            // Compute entry direction (from target center to intersection point)
+            // This gives us the perpendicular direction to the entry side
+            let entry_dx = end_point.x - tgt_cx;
+            let entry_dy = end_point.y - tgt_cy;
+            let entry_len = (entry_dx * entry_dx + entry_dy * entry_dy).sqrt().max(1.0);
+            let entry_nx = entry_dx / entry_len;
+            let entry_ny = entry_dy / entry_len;
 
-                // Third intermediate: transitioning to shallower angle
-                let cp3 = super::graph::Point {
-                    x: start_point.x + dx * 0.60,
-                    y: start_point.y + dy * 0.85,
-                };
+            // Distance for control point offset (proportional to edge length)
+            let edge_dx = end_point.x - start_point.x;
+            let edge_dy = end_point.y - start_point.y;
+            let edge_len = (edge_dx * edge_dx + edge_dy * edge_dy).sqrt();
+            let offset = edge_len * 0.25; // 25% of edge length
 
-                // Fourth intermediate: approach end nearly horizontally
-                let cp4 = super::graph::Point {
-                    x: end_point.x - dx * 0.08,
-                    y: end_point.y,
-                };
+            // First control point: extend from start in exit direction
+            let cp1 = super::graph::Point {
+                x: start_point.x + exit_nx * offset,
+                y: start_point.y + exit_ny * offset,
+            };
 
-                points.insert(1, cp1);
-                points.insert(2, cp2);
-                points.insert(3, cp3);
-                points.insert(4, cp4);
-            } else {
-                // For mostly straight edges, add collinear intermediate points
-                let cp1 = super::graph::Point {
-                    x: start_point.x + dx * 0.33,
-                    y: start_point.y + dy * 0.33,
-                };
-                let cp2 = super::graph::Point {
-                    x: start_point.x + dx * 0.67,
-                    y: start_point.y + dy * 0.67,
-                };
-                points.insert(1, cp1);
-                points.insert(2, cp2);
-            }
+            // Last control point: extend from end in entry direction (reversed)
+            let cp2 = super::graph::Point {
+                x: end_point.x + entry_nx * offset,
+                y: end_point.y + entry_ny * offset,
+            };
+
+            points.insert(1, cp1);
+            points.insert(2, cp2);
         }
 
         // Update edge with new points
