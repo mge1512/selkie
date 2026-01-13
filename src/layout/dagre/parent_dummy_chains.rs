@@ -87,7 +87,6 @@ pub fn run(g: &mut DagreGraph) {
                         if let (Some(nr), Some(nmr)) = (node_rank, nv_min_rank) {
                             if nmr <= nr {
                                 path_idx += 1;
-                                path_v = path.get(path_idx).cloned();
                                 continue;
                             }
                         }
