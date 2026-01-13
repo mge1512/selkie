@@ -337,9 +337,21 @@ fn sx_for_sy(dx: f64, dy: f64, sy: f64) -> f64 {
 /// Assign node intersection points to edges
 /// This adds the start and end points where edges meet node boundaries
 pub fn assign_node_intersects(graph: &mut DagreGraph) {
-    // Get graph dimensions and direction for determining edge curvature
-    let graph_center_x = graph.graph().width.unwrap_or(0.0) / 2.0;
-    let graph_center_y = graph.graph().height.unwrap_or(0.0) / 2.0;
+    // Calculate graph center from actual node positions (more reliable than graph.width/height)
+    let (mut min_x, mut max_x, mut min_y, mut max_y) = (f64::MAX, f64::MIN, f64::MAX, f64::MIN);
+    for node_id in graph.nodes() {
+        if let Some(node) = graph.node(&node_id) {
+            let x = node.x.unwrap_or(0.0);
+            let y = node.y.unwrap_or(0.0);
+            min_x = min_x.min(x);
+            max_x = max_x.max(x);
+            min_y = min_y.min(y);
+            max_y = max_y.max(y);
+        }
+    }
+    let graph_center_x = (min_x + max_x) / 2.0;
+    let graph_center_y = (min_y + max_y) / 2.0;
+
     let rankdir = graph.graph().rankdir.as_str();
     let is_horizontal = rankdir == "LR" || rankdir == "RL";
 
