@@ -390,23 +390,21 @@ pub fn assign_node_intersects(graph: &mut DagreGraph) {
 
         // For edges with only 2 points (no intermediate dummy nodes from normalization),
         // add a midpoint to create the 3-point structure that curveBasis expects.
-        // The midpoint should be biased AWAY from graph center (toward the outer edge)
-        // to match mermaid.js curve behavior. The bias axis depends on layout direction:
-        // - TB/BT layouts: edges flow vertically, bias mid_x toward outer edge
-        // - LR/RL layouts: edges flow horizontally, bias mid_y toward outer edge
+        // The midpoint should use the coordinate of whichever node is FURTHER from
+        // graph center. This creates curves that bow toward the outer node.
         if points.len() == 2 {
             let mid_point = if is_horizontal {
-                // For LR/RL: bias Y away from graph center (outer edge)
+                // For LR/RL: use Y of node further from graph center
                 let src_cy = node_v.y.unwrap_or(0.0);
                 let tgt_cy = node_w.y.unwrap_or(0.0);
-                let avg_y = (src_cy + tgt_cy) / 2.0;
 
-                // Use the Y that's further from graph center (outer edge)
-                // Top-side edges: use min (topmost), Bottom-side edges: use max (bottommost)
-                let mid_y = if avg_y <= graph_center_y {
-                    start_point.y.min(end_point.y)
+                let src_dist = (src_cy - graph_center_y).abs();
+                let tgt_dist = (tgt_cy - graph_center_y).abs();
+
+                let mid_y = if src_dist >= tgt_dist {
+                    start_point.y
                 } else {
-                    start_point.y.max(end_point.y)
+                    end_point.y
                 };
 
                 super::graph::Point {
@@ -414,17 +412,17 @@ pub fn assign_node_intersects(graph: &mut DagreGraph) {
                     y: mid_y,
                 }
             } else {
-                // For TB/BT: bias X away from graph center (outer edge)
+                // For TB/BT: use X of node further from graph center
                 let src_cx = node_v.x.unwrap_or(0.0);
                 let tgt_cx = node_w.x.unwrap_or(0.0);
-                let avg_x = (src_cx + tgt_cx) / 2.0;
 
-                // Use the X that's further from graph center (outer edge)
-                // Left-side edges: use min (leftmost), Right-side edges: use max (rightmost)
-                let mid_x = if avg_x <= graph_center_x {
-                    start_point.x.min(end_point.x)
+                let src_dist = (src_cx - graph_center_x).abs();
+                let tgt_dist = (tgt_cx - graph_center_x).abs();
+
+                let mid_x = if src_dist >= tgt_dist {
+                    start_point.x
                 } else {
-                    start_point.x.max(end_point.x)
+                    end_point.x
                 };
 
                 super::graph::Point {
