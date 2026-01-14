@@ -7,7 +7,7 @@
 //!   selkie -i input.mmd -o output.svg          # -i flag also works
 //!   selkie render input.mmd -o output.svg      # explicit render subcommand
 //!   selkie eval                                # evaluate with gallery samples
-//!   selkie eval --type flowchart --html report.html
+//!   selkie eval -o ./reports                   # custom output directory
 
 use std::fs;
 use std::io::{self, Read, Write};
@@ -16,6 +16,7 @@ use std::process;
 
 use clap::{Parser, Subcommand, ValueEnum};
 use serde::Deserialize;
+use uuid::Uuid;
 
 use mermaid::eval::{self, runner::DiagramInput, samples};
 use mermaid::render::{RenderConfig, Theme};
@@ -132,6 +133,15 @@ struct RenderArgs {
 
 /// Arguments for the eval command
 #[derive(Parser, Debug)]
+#[command(after_help = "\
+Examples:
+  selkie eval                     Run with gallery samples, output to /tmp
+  selkie eval -o ./reports        Output to custom directory
+  selkie eval --type flowchart    Evaluate only flowchart samples
+  selkie eval ./diagrams/         Evaluate .mmd files from directory
+  selkie eval --json report.json  Also generate JSON report
+  selkie eval --verbose           Show detailed per-diagram diffs
+")]
 struct EvalArgs {
     /// Input to evaluate: JSON file, directory, .mmd file, or omit for gallery samples
     #[arg(value_name = "TARGET")]
@@ -141,29 +151,21 @@ struct EvalArgs {
     #[arg(short = 't', long = "type")]
     diagram_type: Option<String>,
 
-    /// Write JSON report to file
-    #[arg(short, long)]
+    /// Output directory for report (default: /tmp). Creates selkie-eval-XXXX subdirectory.
+    #[arg(short, long, value_name = "DIR")]
     output: Option<PathBuf>,
 
-    /// Generate visual comparison HTML
+    /// Write JSON report to file (in addition to HTML report)
     #[arg(long)]
-    html: Option<PathBuf>,
-
-    /// Save comparison PNGs for AI review
-    #[arg(long)]
-    pngs: Option<PathBuf>,
+    json: Option<PathBuf>,
 
     /// Show detailed diff per diagram
     #[arg(short, long)]
     verbose: bool,
 
-    /// Re-render all reference SVGs (ignore cache)
+    /// Clear cache and re-render all reference SVGs
     #[arg(long)]
     force_refresh: bool,
-
-    /// Clear the reference SVG cache before running
-    #[arg(long)]
-    clear_cache: bool,
 
     /// Show cache location and statistics, then exit
     #[arg(long)]
@@ -446,20 +448,17 @@ fn run_render(args: RenderArgs) -> Result<(), Box<dyn std::error::Error>> {
 fn run_eval(args: EvalArgs) -> Result<(), Box<dyn std::error::Error>> {
     let cache = eval::cache::ReferenceCache::with_defaults();
 
-    // Handle --clear-cache: clear cache before anything else
-    if args.clear_cache {
+    // Handle --force-refresh: clear cache before re-rendering
+    if args.force_refresh {
         let cache_dir = cache.cache_dir();
         if cache_dir.exists() {
             let stats = cache.stats();
             cache.clear()?;
             eprintln!(
-                "Cleared {} cached files ({:.2} KB) from {}",
+                "Cleared {} cached files ({:.2} KB)",
                 stats.count,
                 stats.total_size as f64 / 1024.0,
-                cache_dir.display()
             );
-        } else {
-            eprintln!("Cache directory does not exist: {}", cache_dir.display());
         }
     }
 
@@ -488,7 +487,6 @@ fn run_eval(args: EvalArgs) -> Result<(), Box<dyn std::error::Error>> {
     let eval_config = eval::runner::EvalConfig {
         diagram_type_filter: args.diagram_type.clone(),
         skip_visual,
-        force_refresh: args.force_refresh,
         ..Default::default()
     };
     let runner = eval::runner::EvalRunner::new(eval_config, cache);
@@ -496,9 +494,9 @@ fn run_eval(args: EvalArgs) -> Result<(), Box<dyn std::error::Error>> {
     // Get diagrams to evaluate
     let inputs = match &args.target {
         None => {
-            // Use built-in gallery samples
-            eprintln!("Using built-in gallery samples...");
-            samples::all_samples()
+            // Use docs/sources/*.mmd files + embedded samples
+            eprintln!("Using gallery samples (docs/sources/ + embedded)...");
+            samples::all_samples_owned()
                 .into_iter()
                 .map(DiagramInput::from)
                 .collect()
@@ -537,53 +535,80 @@ fn run_eval(args: EvalArgs) -> Result<(), Box<dyn std::error::Error>> {
     // Run evaluation
     let result = runner.evaluate(&inputs);
 
-    // Output results
+    // Output results to stderr (verbose or summary)
     if args.verbose {
-        println!("{}", eval::report::text_detailed(&result));
+        eprintln!("{}", eval::report::text_detailed(&result));
     } else {
-        println!("{}", eval::report::text_summary(&result));
+        eprintln!("{}", eval::report::text_summary(&result));
     }
 
     // Write JSON if requested
-    if let Some(ref path) = args.output {
+    if let Some(ref path) = args.json {
         eval::report::write_json(&result, path)?;
         eprintln!("Wrote JSON report to {}", path.display());
     }
 
-    // Write HTML if requested
-    if let Some(ref path) = args.html {
-        eval::report::write_html(&result, path)?;
-        eprintln!("Wrote HTML report to {}", path.display());
-    }
+    // Create output directory with random ID
+    let base_dir = args.output.unwrap_or_else(|| PathBuf::from("/tmp"));
+    let random_id = &Uuid::new_v4().to_string()[..8];
+    let output_dir = base_dir.join(format!("selkie-eval-{}", random_id));
 
-    // Write PNGs if requested
-    if let Some(ref path) = args.pngs {
-        #[cfg(feature = "png")]
-        {
-            let svg_pairs = runner.take_svg_pairs();
-            if !svg_pairs.is_empty() {
-                match eval::png::write_comparison_pngs(path, &svg_pairs) {
-                    Ok(manifest) => {
-                        eprintln!(
-                            "Wrote {} comparison PNGs to {}",
-                            manifest.diagrams.len(),
-                            path.display()
-                        );
-                    }
-                    Err(e) => {
-                        eprintln!("Warning: Failed to generate PNGs: {}", e);
-                    }
-                }
+    fs::create_dir_all(&output_dir)?;
+
+    // Write HTML report as index.html
+    eprint!("Writing HTML report...");
+    let html_path = output_dir.join("index.html");
+    eval::report::write_html(&result, &html_path)?;
+    eprintln!(" done");
+
+    // Write SVGs to subdirectories organized by diagram type
+    eprint!("Writing SVG files...");
+    for diagram in &result.diagrams {
+        let type_dir = output_dir.join(&diagram.diagram_type);
+        let safe_name = diagram.name.replace(['/', ' '], "_");
+
+        // Only create directory if we have at least one SVG to write
+        if diagram.selkie_svg.is_some() || diagram.reference_svg.is_some() {
+            fs::create_dir_all(&type_dir)?;
+        }
+
+        // Write selkie SVG if available
+        if let Some(ref svg) = diagram.selkie_svg {
+            let path = type_dir.join(format!("{}_selkie.svg", safe_name));
+            fs::write(&path, svg)?;
+        }
+
+        // Write reference SVG if available
+        if let Some(ref svg) = diagram.reference_svg {
+            let path = type_dir.join(format!("{}_reference.svg", safe_name));
+            fs::write(&path, svg)?;
+        }
+    }
+    eprintln!(" done");
+
+    // Write comparison PNGs if png feature is enabled (requires both SVGs)
+    let svg_pairs = runner.take_svg_pairs();
+    #[cfg(feature = "png")]
+    if !svg_pairs.is_empty() {
+        eprint!(
+            "Generating comparison PNGs ({} diagrams)...",
+            svg_pairs.len()
+        );
+        match eval::png::write_comparison_pngs(&output_dir, &svg_pairs, runner.cache()) {
+            Ok(_) => {
+                eprintln!(" done");
+            }
+            Err(e) => {
+                eprintln!(" failed");
+                eprintln!("Warning: Failed to generate comparison PNGs: {}", e);
             }
         }
-        #[cfg(not(feature = "png"))]
-        {
-            eprintln!(
-                "PNG generation requires the 'png' feature. Build with: cargo build --features png"
-            );
-            let _ = path; // Suppress unused warning
-        }
     }
+    #[cfg(not(feature = "png"))]
+    let _ = svg_pairs; // Suppress unused warning
+
+    // Print the output directory path
+    eprintln!("Evaluation report written to: {}", output_dir.display());
 
     // Exit with error code if there are failures
     if result.issue_counts.errors > 0 {

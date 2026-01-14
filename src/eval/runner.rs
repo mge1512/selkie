@@ -9,12 +9,15 @@
 //! 6. Compile results
 
 use super::cache::ReferenceCache;
-use super::checks::{check_structure, CheckConfig};
-use super::samples::Sample;
+use super::checks::{calculate_similarity, check_structure, CheckConfig};
+use super::samples::{OwnedSample, Sample};
 use super::{
     DiagramResult, Dimensions, EvalResult, Issue, Level, ParseResult, RenderResult, Status,
 };
 use crate::render::svg::SvgStructure;
+
+/// SVG pair for PNG comparison: (name, diagram_type, source_text, selkie_svg, reference_svg)
+pub type SvgPair = (String, String, String, String, String);
 
 /// Configuration for the evaluation runner
 #[derive(Debug, Clone, Default)]
@@ -23,8 +26,6 @@ pub struct EvalConfig {
     pub diagram_type_filter: Option<String>,
     /// Whether to skip visual comparison (SSIM)
     pub skip_visual: bool,
-    /// Whether to force refresh cached references
-    pub force_refresh: bool,
     /// Structural check configuration
     pub check_config: CheckConfig,
 }
@@ -53,12 +54,23 @@ impl From<Sample> for DiagramInput {
     }
 }
 
+impl From<OwnedSample> for DiagramInput {
+    fn from(sample: OwnedSample) -> Self {
+        Self {
+            name: sample.name,
+            source: None,
+            diagram_type: Some(sample.diagram_type),
+            text: sample.source,
+        }
+    }
+}
+
 /// Evaluation runner
 pub struct EvalRunner {
     config: EvalConfig,
     cache: ReferenceCache,
     /// SVG pairs collected during evaluation (for PNG generation)
-    svg_pairs: std::cell::RefCell<Vec<(String, String, String)>>, // (name, selkie_svg, reference_svg)
+    svg_pairs: std::cell::RefCell<Vec<SvgPair>>,
 }
 
 impl EvalRunner {
@@ -77,8 +89,13 @@ impl EvalRunner {
     }
 
     /// Get collected SVG pairs for PNG generation
-    pub fn take_svg_pairs(&self) -> Vec<(String, String, String)> {
+    pub fn take_svg_pairs(&self) -> Vec<SvgPair> {
         self.svg_pairs.borrow_mut().drain(..).collect()
+    }
+
+    /// Get a reference to the cache
+    pub fn cache(&self) -> &ReferenceCache {
+        &self.cache
     }
 
     /// Evaluate a list of diagrams
@@ -97,7 +114,11 @@ impl EvalRunner {
             })
             .collect();
 
-        // Evaluate each diagram
+        // Pre-render all reference SVGs in batch (uses cache for already-rendered diagrams)
+        let diagram_texts: Vec<&str> = filtered.iter().map(|i| i.text.as_str()).collect();
+        let reference_svgs = self.cache.render_batch(&diagram_texts);
+
+        // Evaluate each diagram with pre-rendered reference
         for (i, input) in filtered.iter().enumerate() {
             eprint!(
                 "\rEvaluating {}/{}: {}...",
@@ -105,7 +126,8 @@ impl EvalRunner {
                 filtered.len(),
                 input.name
             );
-            let diagram_result = self.evaluate_single(input);
+            let reference_svg = reference_svgs[i].clone();
+            let diagram_result = self.evaluate_single_with_reference(input, reference_svg);
             result.diagrams.push(diagram_result);
         }
         eprintln!();
@@ -116,8 +138,18 @@ impl EvalRunner {
         result
     }
 
-    /// Evaluate a single diagram
+    /// Evaluate a single diagram (fetches reference SVG internally)
     pub fn evaluate_single(&self, input: &DiagramInput) -> DiagramResult {
+        let reference_svg = self.cache.get_or_render(&input.text);
+        self.evaluate_single_with_reference(input, reference_svg)
+    }
+
+    /// Evaluate a single diagram with a pre-rendered reference SVG
+    fn evaluate_single_with_reference(
+        &self,
+        input: &DiagramInput,
+        reference_svg: Result<String, String>,
+    ) -> DiagramResult {
         let mut result = DiagramResult {
             name: input.name.clone(),
             source: input.source.clone(),
@@ -128,6 +160,7 @@ impl EvalRunner {
             diagram_text: Some(input.text.clone()),
             status: Status::Match,
             visual_similarity: None,
+            structural_similarity: None,
             structural_match: true,
             issues: Vec::new(),
             parse_result: ParseResult {
@@ -153,13 +186,7 @@ impl EvalRunner {
             }
         }
 
-        // Step 2: Get reference SVG
-        let reference_svg = if self.config.force_refresh {
-            self.cache.render_with_mermaid(&input.text)
-        } else {
-            self.cache.get_or_render(&input.text)
-        };
-
+        // Step 2: Process reference SVG result
         match &reference_svg {
             Ok(_) => result.parse_result.reference_success = true,
             Err(e) => {
@@ -229,6 +256,9 @@ impl EvalRunner {
 
         // Step 5: Structural comparison
         if let (Some(selkie_struct), Some(ref_struct)) = (&selkie_structure, &reference_structure) {
+            // Calculate structural similarity score
+            result.structural_similarity = Some(calculate_similarity(selkie_struct, ref_struct));
+
             let check_issues =
                 check_structure(selkie_struct, ref_struct, &self.config.check_config);
             result.structural_match = !check_issues.iter().any(|i| i.level == Level::Error);
@@ -237,9 +267,11 @@ impl EvalRunner {
 
         // Step 6: Visual similarity (SSIM) and collect SVG pairs
         if let (Some(selkie), Ok(reference)) = (&selkie_svg, &reference_svg) {
-            // Store SVG pair for PNG generation
+            // Store SVG pair for PNG generation (name, diagram_type, source_text, selkie_svg, reference_svg)
             self.svg_pairs.borrow_mut().push((
                 input.name.clone(),
+                result.diagram_type.clone(),
+                input.text.clone(),
                 selkie.clone(),
                 reference.clone(),
             ));

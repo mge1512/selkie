@@ -55,50 +55,28 @@ Selkie could not exist without all the human effort that has gone into these exc
 
 ## Supported Diagram Types
 
-Selkie supports parsing for all major Mermaid diagram types. Rendering is complete for core diagram types, with others in progress.
+Selkie supports parsing and rendering for all major Mermaid diagram types. These examples showcase Selkie's rendering capabilities.
 
-<table>
-<tr>
-<th>Diagram Type</th>
-<th>Mermaid.js</th>
-<th>Selkie</th>
-</tr>
-<tr>
-<td><strong>Flowchart</strong><br><sub>Nodes, edges, subgraphs</sub></td>
-<td><img src="docs/images/flowchart_mermaid.svg" alt="Flowchart Mermaid" width="350"></td>
-<td><img src="docs/images/flowchart.svg" alt="Flowchart Selkie" width="350"></td>
-</tr>
-<tr>
-<td><strong>Sequence</strong><br><sub>Participant interactions</sub></td>
-<td><img src="docs/images/sequence_mermaid.svg" alt="Sequence Mermaid" width="350"></td>
-<td><img src="docs/images/sequence.svg" alt="Sequence Selkie" width="350"></td>
-</tr>
-<tr>
-<td><strong>Class</strong><br><sub>UML relationships</sub></td>
-<td><img src="docs/images/class_mermaid.svg" alt="Class Mermaid" width="350"></td>
-<td><img src="docs/images/class.svg" alt="Class Selkie" width="350"></td>
-</tr>
-<tr>
-<td><strong>State</strong><br><sub>State machines</sub></td>
-<td><img src="docs/images/state_mermaid.svg" alt="State Mermaid" width="350"></td>
-<td><img src="docs/images/state.svg" alt="State Selkie" width="350"></td>
-</tr>
-<tr>
-<td><strong>ER Diagram</strong><br><sub>Data modeling</sub></td>
-<td><img src="docs/images/er_mermaid.svg" alt="ER Mermaid" width="350"></td>
-<td><img src="docs/images/er.svg" alt="ER Selkie" width="350"></td>
-</tr>
-<tr>
-<td><strong>Gantt</strong><br><sub>Project timelines</sub></td>
-<td><img src="docs/images/gantt_mermaid.svg" alt="Gantt Mermaid" width="350"></td>
-<td><img src="docs/images/gantt.svg" alt="Gantt Selkie" width="350"></td>
-</tr>
-<tr>
-<td><strong>Pie Chart</strong><br><sub>Proportional data</sub></td>
-<td><img src="docs/images/pie_mermaid.svg" alt="Pie Mermaid" width="350"></td>
-<td><img src="docs/images/pie.svg" alt="Pie Selkie" width="350"></td>
-</tr>
-</table>
+### Flowchart
+<img src="docs/images/flowchart.svg" alt="Flowchart" width="800">
+
+### Sequence Diagram
+<img src="docs/images/sequence.svg" alt="Sequence Diagram" width="800">
+
+### Class Diagram
+<img src="docs/images/class.svg" alt="Class Diagram" width="800">
+
+### State Diagram
+<img src="docs/images/state.svg" alt="State Diagram" width="800">
+
+### ER Diagram
+<img src="docs/images/er.svg" alt="ER Diagram" width="800">
+
+### Gantt Chart
+<img src="docs/images/gantt.svg" alt="Gantt Chart" width="800">
+
+### Pie Chart
+<img src="docs/images/pie.svg" alt="Pie Chart" width="400">
 
 ### Additional Diagram Types (Parser Only)
 
@@ -168,29 +146,19 @@ selkie eval
 # Evaluate specific diagram types
 selkie eval --type flowchart
 
-# Generate HTML comparison report
-selkie eval --html report.html
+# Output to custom directory
+selkie eval -o ./reports
 
-# Generate side-by-side comparison PNGs (requires 'png' feature and Playwright)
-selkie eval --pngs comparison_output/
+# Show detailed per-diagram diffs
+selkie eval --verbose
 ```
 
-The eval system performs:
-
+The eval system generates an HTML report with:
 - **Structural comparison** - Node/edge counts, labels, connections
-- **Visual similarity** - SSIM-based image comparison using [SSIM](https://en.wikipedia.org/wiki/Structural_similarity_index_measure)
-- **Report generation** - Text, JSON, HTML, and side-by-side PNG outputs
+- **Visual similarity** - SSIM-based image comparison
+- **Side-by-side PNGs** - Selkie output next to Mermaid.js reference
 
-#### Visual Comparison
-
-The `--pngs` flag generates side-by-side comparison images showing Selkie output next to the Mermaid.js reference. This requires:
-
-1. Building with `--features png` for PNG generation
-2. Playwright with Chromium for rendering Mermaid.js references (`cd tools/validation && npm install && npx playwright install chromium`)
-
-Each comparison PNG places Selkie's output on the left and Mermaid.js on the right, making differences easy to spot.
-
-Current status: **100% parity** on built-in test samples (16/16 diagrams match reference).
+Requires [Mermaid CLI](https://github.com/mermaid-js/mermaid-cli) for reference rendering (`npm install -g @mermaid-js/mermaid-cli`).
 
 ### As a Library
 

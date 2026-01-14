@@ -51,7 +51,7 @@ The eval system serves as the primary guidance mechanism for Claude Code during 
 ## Quick Start
 
 ```bash
-# Run evaluation with built-in samples
+# Run evaluation with built-in samples (outputs to /tmp/selkie-eval-XXXX/)
 selkie eval
 
 # Evaluate specific diagram types
@@ -60,10 +60,10 @@ selkie eval --type flowchart
 # Evaluate custom diagram files
 selkie eval ./diagrams/
 
-# Generate HTML report
-selkie eval --html report.html
+# Custom output directory (creates selkie-eval-XXXX/ subdirectory)
+selkie eval -o ./reports
 
-# Generate JSON report
+# Also generate JSON report
 selkie eval --json results.json
 ```
 
@@ -210,10 +210,45 @@ Visual comparison report with:
 - Summary statistics
 - Per-diagram status cards
 - Issue details with severity highlighting
+- Side-by-side SVG comparisons
+
+The HTML report is always generated as `index.html` in the output directory:
 
 ```bash
-selkie eval --html report.html
-open report.html
+selkie eval                    # Creates /tmp/selkie-eval-XXXX/index.html
+selkie eval -o ./reports       # Creates ./reports/selkie-eval-XXXX/index.html
+open /tmp/selkie-eval-*/index.html
+```
+
+## Output Directory Structure
+
+Each eval run creates a unique directory with assets organized by diagram type:
+
+```
+selkie-eval-a1b2c3d4/
+├── index.html                      # Main HTML report
+├── manifest.json                   # PNG manifest (if png feature enabled)
+├── flowchart/
+│   ├── basic_selkie.svg            # Selkie-rendered SVG
+│   ├── basic_reference.svg         # Mermaid.js reference SVG
+│   ├── basic.png                   # Side-by-side comparison
+│   ├── styled_selkie.svg
+│   ├── styled_reference.svg
+│   └── styled.png
+├── sequence/
+│   ├── simple_selkie.svg
+│   ├── simple_reference.svg
+│   └── simple.png
+├── pie/
+│   └── ...
+└── state/
+    └── ...
+```
+
+The output path is shown at the end of the evaluation:
+
+```
+Evaluation report written to: /tmp/selkie-eval-a1b2c3d4
 ```
 
 ## Built-in Samples
@@ -229,9 +264,6 @@ The eval system includes built-in sample diagrams covering:
 - Gantt charts with tasks
 
 ```bash
-# List available sample types
-selkie eval --list-types
-
 # Evaluate only flowchart samples
 selkie eval --type flowchart
 ```
@@ -264,9 +296,6 @@ pub struct EvalConfig {
     /// Skip visual comparison (faster)
     pub skip_visual: bool,
 
-    /// Force refresh cached references
-    pub force_refresh: bool,
-
     /// Structural check thresholds
     pub check_config: CheckConfig,
 }
@@ -282,25 +311,24 @@ pub struct CheckConfig {
 
 ## Requirements
 
-The eval system requires Node.js to render reference SVGs via Mermaid.js:
+The eval system requires [Mermaid CLI](https://github.com/mermaid-js/mermaid-cli) (`mmdc`) to render reference SVGs:
 
 ```bash
-# Install dependencies
-cd tools/validation
-npm install
+# Install mermaid-cli globally
+npm install -g @mermaid-js/mermaid-cli
 
 # Verify setup
-node render_mermaid.mjs --help
+mmdc --version
 ```
 
 ## Troubleshooting
 
-### "Mermaid renderer not found"
+### "mmdc is not installed" or "mmdc not found"
 
-Ensure the validation tools are installed:
+Install the Mermaid CLI:
 
 ```bash
-cd tools/validation && npm install
+npm install -g @mermaid-js/mermaid-cli
 ```
 
 ### High cache disk usage

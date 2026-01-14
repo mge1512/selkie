@@ -46,6 +46,9 @@ glob = "0.3"
 # Cache directory discovery
 dirs = "5.0"
 
+# Temporary files (for mmdc batch mode)
+tempfile = "3"
+
 # XML parsing (for SVG analysis)
 roxmltree = "0.20"
 
@@ -65,11 +68,12 @@ required-features = ["cli"]
 [features]
 default = ["cli", "png"]
 cli = ["clap"]
-png = ["resvg"]
+png = ["resvg", "image"]
 pdf = ["svg2pdf", "resvg"]
 kitty = ["resvg", "base64", "libc", "atty", "image"]
 wasm = ["js-sys", "wasm-bindgen"]
 all-formats = ["png", "pdf", "kitty"]
+eval = ["cli", "png"]  # Everything needed for `selkie eval`
 
 [dependencies.clap]
 version = "4.4"
