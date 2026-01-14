@@ -160,33 +160,33 @@ marker path {
 
     </g>
     <g class="state-node" id="state-Idle">
-      <rect x="14.399999999999991" y="84" width="70.4" height="52.8" rx="10" ry="10" class="state-box" stroke="#333333" stroke-width="1" fill="#ECECFF"/>
-      <text x="49.599999999999994" y="115.4" class="state-label" font-size="12" text-anchor="middle">Idle</text>
+      <rect x="14.399999999999999" y="84" width="70.4" height="52.8" rx="10" ry="10" class="state-box" fill="#ECECFF" stroke-width="1" stroke="#333333"/>
+      <text x="49.6" y="115.4" class="state-label" text-anchor="middle" font-size="12">Idle</text>
     </g>
     <g class="state-node" id="state-Running">
-      <rect x="-0.000000000000007105427357601002" y="216.8" width="99.2" height="52.8" rx="10" ry="10" class="state-box" stroke="#333333" stroke-width="1" fill="#ECECFF"/>
-      <text x="49.599999999999994" y="248.20000000000002" class="state-label" text-anchor="middle" font-size="12">Running</text>
+      <rect x="0" y="216.8" width="99.2" height="52.8" rx="10" ry="10" class="state-box" stroke="#333333" fill="#ECECFF" stroke-width="1"/>
+      <text x="49.6" y="248.20000000000002" class="state-label" font-size="12" text-anchor="middle">Running</text>
     </g>
     <g class="state-node" id="state-[*]_end_0">
-      <circle cx="49.599999999999994" cy="341.6" r="12" class="state-end-outer" stroke="#333333" stroke-width="2" fill="none"/>
-      <circle cx="49.599999999999994" cy="341.6" r="7.199999999999999" class="state-end-inner" fill="#333333"/>
+      <circle cx="49.6" cy="341.6" r="12" class="state-end-outer" stroke-width="2" fill="none" stroke="#333333"/>
+      <circle cx="49.6" cy="341.6" r="7.199999999999999" class="state-end-inner" fill="#333333"/>
     </g>
     <g class="state-node" id="state-[*]_start_0">
-      <circle cx="49.599999999999994" cy="12" r="12" class="state-start" fill="#333333"/>
+      <circle cx="49.6" cy="12" r="12" class="state-start" fill="#333333"/>
     </g>
     <g class="transition">
-      <line x1="46.40532214028728" y1="23.566937078270175" x2="26.39999999999999" y2="84" class="transition-line" marker-end="url(#arrow)" stroke="#333333" stroke-width="1"/>
+      <line x1="46.40532214028728" y1="23.566937078270175" x2="26.4" y2="84" class="transition-line" stroke="#333333" stroke-width="1" marker-end="url(#arrow)"/>
     </g>
     <g class="transition">
-      <line x1="49.599999999999994" y1="136.8" x2="35.199999999999996" y2="216.8" class="transition-line" marker-end="url(#arrow)" stroke="#333333" stroke-width="1"/>
-      <text x="42.39999999999999" y="171.8" class="transition-label" font-size="11" text-anchor="middle">start</text>
+      <line x1="49.6" y1="136.8" x2="35.2" y2="216.8" class="transition-line" stroke="#333333" stroke-width="1" marker-end="url(#arrow)"/>
+      <text x="42.400000000000006" y="171.8" class="transition-label" font-size="11" text-anchor="middle">start</text>
     </g>
     <g class="transition">
-      <line x1="49.599999999999994" y1="216.8" x2="63.99999999999999" y2="136.8" class="transition-line" marker-end="url(#arrow)" stroke-width="1" stroke="#333333"/>
+      <line x1="49.6" y1="216.8" x2="64" y2="136.8" class="transition-line" stroke-width="1" marker-end="url(#arrow)" stroke="#333333"/>
       <text x="56.8" y="171.8" class="transition-label" font-size="11" text-anchor="middle">stop</text>
     </g>
     <g class="transition">
-      <line x1="49.599999999999994" y1="269.6" x2="83.40526680779793" y2="344.6158004233938" class="transition-line" stroke-width="1" marker-end="url(#arrow)" stroke="#333333"/>
+      <line x1="49.6" y1="269.6" x2="83.40526680779794" y2="344.6158004233938" class="transition-line" marker-end="url(#arrow)" stroke-width="1" stroke="#333333"/>
     </g>
   </g>
 </svg>

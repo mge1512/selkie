@@ -109,19 +109,19 @@ marker path {
     </g>
     <g class="edgePaths">
       <g class="edge" id="edge-L-A-B-0">
-        <path d="M 80.00 77.80 C 88.33 77.80, 96.67 77.80, 105.00 77.80 C 113.33 77.80, 121.67 77.80, 130.00 77.80" class="edge-path" stroke-width="1" marker-end="url(#arrow_point)" fill="none"/>
+        <path d="M 80.00 77.80 C 88.33 77.80, 96.67 77.80, 105.00 77.80 C 113.33 77.80, 121.67 77.80, 130.00 77.80" class="edge-path" fill="none" stroke-width="1" marker-end="url(#arrow_point)"/>
       </g>
       <g class="edge" id="edge-L-B-C-0">
-        <path d="M 245.94 64.14 C 263.82 59.36, 281.71 54.58, 300.52 49.47 C 319.33 44.35, 339.07 38.91, 358.80 33.46" class="edge-path" marker-end="url(#arrow_point)" fill="none" stroke-width="1"/>
+        <path d="M 245.94 64.14 C 263.82 59.36, 281.71 54.58, 300.52 49.47 C 319.33 44.35, 339.07 38.91, 358.80 33.46" class="edge-path" fill="none" marker-end="url(#arrow_point)" stroke-width="1"/>
       </g>
       <g class="edge" id="edge-L-B-D-0">
         <path d="M 245.94 91.46 C 263.82 96.24, 281.71 101.02, 297.32 105.25 C 312.93 109.48, 326.27 113.16, 339.60 116.84" class="edge-path" stroke-width="1" fill="none" marker-end="url(#arrow_point)"/>
       </g>
       <g class="edge" id="edge-L-C-E-0">
-        <path d="M 410.00 34.98 C 424.73 39.92, 439.47 44.86, 451.00 49.44 C 462.53 54.01, 470.87 58.22, 479.20 62.44" class="edge-path" marker-end="url(#arrow_point)" fill="none" stroke-width="1"/>
+        <path d="M 410.00 34.98 C 424.73 39.92, 439.47 44.86, 451.00 49.44 C 462.53 54.01, 470.87 58.22, 479.20 62.44" class="edge-path" fill="none" marker-end="url(#arrow_point)" stroke-width="1"/>
       </g>
       <g class="edge" id="edge-L-D-E-0">
-        <path d="M 429.20 114.18 C 437.53 111.39, 445.87 108.59, 454.20 105.09 C 462.53 101.59, 470.87 97.38, 479.20 93.16" class="edge-path" fill="none" stroke-width="1" marker-end="url(#arrow_point)"/>
+        <path d="M 429.20 114.18 C 437.53 111.39, 445.87 108.59, 454.20 105.09 C 462.53 101.59, 470.87 97.38, 479.20 93.16" class="edge-path" marker-end="url(#arrow_point)" stroke-width="1" fill="none"/>
       </g>
     </g>
     <g class="edgeLabels">
@@ -137,19 +137,19 @@ marker path {
     <g class="nodes">
       <g class="node" id="node-A">
         <rect x="0" y="51.4" width="80" height="52.8"/>
-        <text x="40" y="77.8" class="label" dominant-baseline="central" text-anchor="middle">Start</text>
+        <text x="40" y="77.8" class="label" text-anchor="middle" dominant-baseline="central">Start</text>
       </g>
       <g class="node" id="node-B">
         <polygon points="194.8,13 259.6,77.8 194.8,142.6 130,77.8"/>
-        <text x="194.8" y="77.8" class="label" text-anchor="middle" dominant-baseline="central">Decision</text>
+        <text x="194.8" y="77.8" class="label" dominant-baseline="central" text-anchor="middle">Decision</text>
       </g>
       <g class="node" id="node-C">
         <rect x="358.8" y="0" width="51.2" height="52.8"/>
-        <text x="384.40000000000003" y="26.4" class="label" text-anchor="middle" dominant-baseline="central">OK</text>
+        <text x="384.40000000000003" y="26.4" class="label" dominant-baseline="central" text-anchor="middle">OK</text>
       </g>
       <g class="node" id="node-D">
         <rect x="339.6" y="102.79999999999998" width="89.6" height="52.8"/>
-        <text x="384.40000000000003" y="129.2" class="label" text-anchor="middle" dominant-baseline="central">Cancel</text>
+        <text x="384.40000000000003" y="129.2" class="label" dominant-baseline="central" text-anchor="middle">Cancel</text>
       </g>
       <g class="node" id="node-E">
         <rect x="479.20000000000005" y="51.4" width="60.8" height="52.8"/>
