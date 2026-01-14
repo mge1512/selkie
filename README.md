@@ -14,13 +14,13 @@ Selkie provides significant performance improvements compared to [mermaid-cli](h
 
 ### Benchmark Results
 
-| Diagram | mmdc | Selkie | Speedup |
-|---------|------|--------|---------|
-| Simple flowchart (5 nodes) | 3.21s | 7ms | **476x** |
-| Medium flowchart (15 nodes) | 4.89s | 8ms | **641x** |
-| Large flowchart (100 nodes) | 3.67s | 18ms | **203x** |
-| Sequence diagram (4 actors) | 2.86s | 6ms | **509x** |
-| Class diagram (5 classes) | 4.10s | 5ms | **797x** |
+| Diagram | mmdc | Selkie |
+|---------|------|--------|
+| Simple flowchart (5 nodes) | 3.21s | 7ms |
+| Medium flowchart (15 nodes) | 4.89s | 8ms |
+| Large flowchart (100 nodes) | 3.67s | 18ms |
+| Sequence diagram (4 actors) | 2.86s | 6ms |
+| Class diagram (5 classes) | 4.10s | 5ms |
 
 _CLI-to-CLI comparison. Median of 5 runs after 2 warmup runs._
 
