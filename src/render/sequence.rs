@@ -146,6 +146,9 @@ pub fn render_sequence(db: &SequenceDb, config: &RenderConfig) -> Result<String>
     let sequence_step: i32 = autonumber_config.map_or(1, |c| c.step);
     let autonumber_enabled = autonumber_config.is_some();
 
+    // Collect activations to add after lifelines (for correct z-order)
+    let mut pending_activations: Vec<SvgElement> = Vec::new();
+
     for (_, event) in events {
         match event {
             TimelineEvent::Message(message) => match message.message_type {
@@ -164,8 +167,9 @@ pub fn render_sequence(db: &SequenceDb, config: &RenderConfig) -> Result<String>
                             if let Some(start_y) = stack.pop() {
                                 if let Some(&actor_x) = actor_positions.get(actor) {
                                     let end_y = last_message_y.unwrap_or(current_y);
+                                    // Collect activation to add after lifelines
                                     let activation = render_activation(actor_x, start_y, end_y);
-                                    doc.add_element(activation);
+                                    pending_activations.push(activation);
                                 }
                             }
                         }
@@ -220,8 +224,9 @@ pub fn render_sequence(db: &SequenceDb, config: &RenderConfig) -> Result<String>
                             current_y,
                             label,
                         );
+                        // Add fragment labels to edge_labels for proper z-order
                         for element in label_elements {
-                            doc.add_element(element);
+                            doc.add_edge_label(element);
                         }
                     }
                     current_y += message_spacing;
@@ -260,8 +265,9 @@ pub fn render_sequence(db: &SequenceDb, config: &RenderConfig) -> Result<String>
                             fragment.start_y,
                             &fragment.label,
                         );
+                        // Add fragment labels to edge_labels for proper z-order
                         for element in label_elements {
-                            doc.add_element(element);
+                            doc.add_edge_label(element);
                         }
                     }
                     // Don't advance current_y after fragment end - content already positioned
@@ -281,7 +287,7 @@ pub fn render_sequence(db: &SequenceDb, config: &RenderConfig) -> Result<String>
                                 None
                             };
 
-                            let msg_element = render_message(
+                            let msg_elements = render_message(
                                 from_x,
                                 to_x,
                                 current_y,
@@ -289,7 +295,14 @@ pub fn render_sequence(db: &SequenceDb, config: &RenderConfig) -> Result<String>
                                 message.message_type,
                                 seq_num,
                             );
-                            doc.add_element(msg_element);
+                            // Add shapes first (edge_paths), then labels (edge_labels)
+                            // This ensures proper z-order: shapes render before text
+                            for shape in msg_elements.shapes {
+                                doc.add_edge_path(shape);
+                            }
+                            for label in msg_elements.labels {
+                                doc.add_edge_label(label);
+                            }
 
                             // Increment sequence number after each message
                             if autonumber_enabled {
@@ -358,7 +371,8 @@ pub fn render_sequence(db: &SequenceDb, config: &RenderConfig) -> Result<String>
         let x = padding_x + (i as f64) * actor_spacing;
         let center_x = x + actor_width / 2.0;
 
-        // Lifeline (mermaid.js style)
+        // Lifeline (mermaid.js style) - rendered in clusters layer (back)
+        // so message lines and autonumbers render on top
         let lifeline = SvgElement::Line {
             x1: center_x,
             y1: lifeline_start_y,
@@ -368,7 +382,7 @@ pub fn render_sequence(db: &SequenceDb, config: &RenderConfig) -> Result<String>
                 .with_attr("stroke-width", "0.5px")
                 .with_class("actor-line"),
         };
-        doc.add_element(lifeline);
+        doc.add_cluster(lifeline);
 
         // Bottom actor box/stick figure
         let bottom_actor = render_actor(
@@ -381,6 +395,11 @@ pub fn render_sequence(db: &SequenceDb, config: &RenderConfig) -> Result<String>
             actor_box_padding,
         );
         doc.add_element(bottom_actor);
+    }
+
+    // Add activations after lifelines (so activations render on top of lifelines)
+    for activation in pending_activations {
+        doc.add_cluster(activation);
     }
 
     // Set final SVG dimensions
@@ -435,6 +454,13 @@ struct FragmentState {
     min_actor_idx: Option<usize>,
     max_actor_idx: Option<usize>,
     color: Option<String>,
+}
+
+/// Message elements separated into shapes (lines/paths) and labels (text)
+/// This enables proper SVG z-order: shapes render before labels
+struct MessageElements {
+    shapes: Vec<SvgElement>,
+    labels: Vec<SvgElement>,
 }
 
 impl FragmentState {
@@ -622,6 +648,7 @@ fn render_actor(
 }
 
 /// Render a message between two actors
+/// Returns shapes and labels separately for proper z-order
 fn render_message(
     from_x: f64,
     to_x: f64,
@@ -629,8 +656,9 @@ fn render_message(
     label: &str,
     msg_type: LineType,
     sequence_num: Option<i32>,
-) -> SvgElement {
-    let mut children = Vec::new();
+) -> MessageElements {
+    let mut shapes = Vec::new();
+    let mut labels = Vec::new();
 
     let (is_dotted, marker_id) = match msg_type {
         LineType::Solid => (false, Some("arrow-filled")),
@@ -658,33 +686,7 @@ fn render_message(
         return render_self_message(from_x, y, label, is_dotted, sequence_num);
     }
 
-    // Sequence number (rendered at start of message line, like mermaid.js)
-    if let Some(num) = sequence_num {
-        let seq_x = from_x.min(to_x);
-        let seq_radius = 8.0;
-
-        // Circle background
-        children.push(SvgElement::Circle {
-            cx: seq_x,
-            cy: y,
-            r: seq_radius,
-            attrs: Attrs::new().with_class("sequenceNumber-circle"),
-        });
-
-        // Number text
-        children.push(SvgElement::Text {
-            x: seq_x,
-            y: y + 4.0,
-            content: num.to_string(),
-            attrs: Attrs::new()
-                .with_attr("text-anchor", "middle")
-                .with_class("sequenceNumber")
-                .with_attr("font-size", "12")
-                .with_attr("font-family", "sans-serif"),
-        });
-    }
-
-    // Message line
+    // Message line (shape - rendered first in edge_paths)
     let mut line_attrs = Attrs::new()
         .with_stroke_width(1.0)
         .with_class("message-line");
@@ -696,37 +698,42 @@ fn render_message(
         line_attrs = line_attrs.with_stroke_dasharray("5,5");
     }
 
-    // Adjust line start if sequence number is present
-    let line_start_x = if sequence_num.is_some() {
-        let seq_radius = 8.0;
-        if from_x < to_x {
-            from_x + seq_radius
-        } else {
-            from_x
-        }
-    } else {
-        from_x
-    };
-
-    let line_end_x = if sequence_num.is_some() && from_x > to_x {
-        to_x + 8.0
-    } else {
-        to_x
-    };
-
-    children.push(SvgElement::Line {
-        x1: line_start_x,
+    shapes.push(SvgElement::Line {
+        x1: from_x,
         y1: y,
-        x2: line_end_x,
+        x2: to_x,
         y2: y,
         attrs: line_attrs,
     });
 
-    // Message label
+    // Sequence number circle and text - always at the sender's position (from_x)
+    if let Some(num) = sequence_num {
+        // Circle background (shape - rendered first)
+        shapes.push(SvgElement::Circle {
+            cx: from_x,
+            cy: y,
+            r: 11.0, // Slightly larger for better visibility
+            attrs: Attrs::new().with_class("sequenceNumber-circle"),
+        });
+
+        // Number text (label - rendered after shapes in edge_labels)
+        labels.push(SvgElement::Text {
+            x: from_x,
+            y: y + 4.0,
+            content: num.to_string(),
+            attrs: Attrs::new()
+                .with_attr("text-anchor", "middle")
+                .with_class("sequenceNumber")
+                .with_attr("font-size", "12")
+                .with_attr("font-family", "sans-serif"),
+        });
+    }
+
+    // Message label (text - rendered after shapes in edge_labels)
     let label_x = (from_x + to_x) / 2.0;
     let label_y = y - 10.0;
 
-    children.push(SvgElement::Text {
+    labels.push(SvgElement::Text {
         x: label_x,
         y: label_y,
         content: label.to_string(),
@@ -736,10 +743,7 @@ fn render_message(
             .with_attr("font-size", "16"),
     });
 
-    SvgElement::Group {
-        children,
-        attrs: Attrs::new().with_class("message"),
-    }
+    MessageElements { shapes, labels }
 }
 
 fn render_activation(actor_x: f64, start_y: f64, end_y: f64) -> SvgElement {
@@ -929,48 +933,24 @@ fn fragment_prefix(kind: FragmentKind) -> &'static str {
     }
 }
 
-/// Render a self-message (message to the same actor)
+/// Render a self-message (loop back to same actor)
+/// Returns shapes and labels separately for proper z-order
 fn render_self_message(
     x: f64,
     y: f64,
     label: &str,
     is_dotted: bool,
     sequence_num: Option<i32>,
-) -> SvgElement {
-    let mut children = Vec::new();
+) -> MessageElements {
+    let mut shapes = Vec::new();
+    let mut labels = Vec::new();
     let loop_width = 40.0;
     let loop_height = 30.0;
 
-    // Sequence number (rendered at start of message)
-    if let Some(num) = sequence_num {
-        let seq_radius = 8.0;
-
-        // Circle background
-        children.push(SvgElement::Circle {
-            cx: x,
-            cy: y,
-            r: seq_radius,
-            attrs: Attrs::new().with_class("sequenceNumber-circle"),
-        });
-
-        // Number text
-        children.push(SvgElement::Text {
-            x,
-            y: y + 4.0,
-            content: num.to_string(),
-            attrs: Attrs::new()
-                .with_attr("text-anchor", "middle")
-                .with_class("sequenceNumber")
-                .with_attr("font-size", "12")
-                .with_attr("font-family", "sans-serif"),
-        });
-    }
-
-    let start_x = if sequence_num.is_some() { x + 8.0 } else { x };
-
+    // Self-message path (shape - rendered first in edge_paths)
     let path = format!(
         "M {} {} L {} {} L {} {} L {} {}",
-        start_x,
+        x,
         y,
         x + loop_width,
         y,
@@ -990,12 +970,36 @@ fn render_self_message(
         path_attrs = path_attrs.with_stroke_dasharray("5,5");
     }
 
-    children.push(SvgElement::Path {
+    shapes.push(SvgElement::Path {
         d: path,
         attrs: path_attrs,
     });
 
-    children.push(SvgElement::Text {
+    // Sequence number circle and text - at the actor's position
+    if let Some(num) = sequence_num {
+        // Circle background (shape - rendered first)
+        shapes.push(SvgElement::Circle {
+            cx: x,
+            cy: y,
+            r: 11.0, // Match regular message size
+            attrs: Attrs::new().with_class("sequenceNumber-circle"),
+        });
+
+        // Number text (label - rendered after shapes in edge_labels)
+        labels.push(SvgElement::Text {
+            x,
+            y: y + 4.0,
+            content: num.to_string(),
+            attrs: Attrs::new()
+                .with_attr("text-anchor", "middle")
+                .with_class("sequenceNumber")
+                .with_attr("font-size", "12")
+                .with_attr("font-family", "sans-serif"),
+        });
+    }
+
+    // Message label (text - rendered after shapes in edge_labels)
+    labels.push(SvgElement::Text {
         x: x + loop_width + 5.0,
         y: y + loop_height / 2.0,
         content: label.to_string(),
@@ -1005,10 +1009,7 @@ fn render_self_message(
             .with_attr("font-size", "16"),
     });
 
-    SvgElement::Group {
-        children,
-        attrs: Attrs::new().with_class("message self-message"),
-    }
+    MessageElements { shapes, labels }
 }
 
 /// Render a note
@@ -1147,8 +1148,8 @@ fn create_arrow_marker(id: &str, filled: bool) -> SvgElement {
         view_box: "0 0 10 10".to_string(),
         ref_x: 10.0,
         ref_y: 5.0,
-        marker_width: 6.0,
-        marker_height: 6.0,
+        marker_width: 12.0,
+        marker_height: 12.0,
         orient: "auto".to_string(),
         marker_units: None,
         children: vec![SvgElement::Path {
@@ -1165,8 +1166,8 @@ fn create_cross_marker() -> SvgElement {
         view_box: "0 0 10 10".to_string(),
         ref_x: 5.0,
         ref_y: 5.0,
-        marker_width: 6.0,
-        marker_height: 6.0,
+        marker_width: 12.0,
+        marker_height: 12.0,
         orient: "auto".to_string(),
         marker_units: None,
         children: vec![
@@ -1195,9 +1196,10 @@ fn create_cross_marker() -> SvgElement {
 /// Create a sequence number marker (circle background for message numbering)
 /// Matches mermaid.js marker: <marker id="sequencenumber">
 fn create_sequence_number_marker() -> SvgElement {
+    // Matching mermaid.js marker definition (no viewBox)
     SvgElement::Marker {
         id: "sequencenumber".to_string(),
-        view_box: "0 0 30 30".to_string(),
+        view_box: String::new(), // No viewBox like mermaid.js
         ref_x: 15.0,
         ref_y: 15.0,
         marker_width: 60.0,
@@ -1322,13 +1324,12 @@ text.actor, text.actor > tspan, text.actor-box, text.actor-label {{
 }}
 
 .sequenceNumber-circle {{
-  fill: {actor_bkg};
-  stroke: {actor_border};
-  stroke-width: 1.5px;
+  fill: {signal_color};
+  stroke: {signal_color};
 }}
 
 .sequenceNumber {{
-  fill: {actor_text_color};
+  fill: white;
 }}
 "#,
         signal_text_color = theme.signal_text_color,
