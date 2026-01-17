@@ -6,9 +6,391 @@ use crate::diagrams::er::{Cardinality, Direction, Entity, ErDb, Identification};
 use crate::error::Result;
 use crate::layout::{
     layout, CharacterSizeEstimator, LayoutDirection, LayoutEdge, LayoutGraph, LayoutNode,
-    LayoutOptions, NodeShape, Padding, SizeEstimator, ToLayoutGraph,
+    LayoutOptions, NodeShape, Padding, Point, SizeEstimator, ToLayoutGraph,
 };
-use crate::render::svg::{Attrs, RenderConfig, SvgDocument, SvgElement};
+use crate::render::svg::edges::build_curved_path;
+use crate::render::svg::{Attrs, RenderConfig, SvgDocument, SvgElement, Theme};
+
+/// Entity dimensions calculated from content
+#[derive(Debug, Clone)]
+struct EntityDimensions {
+    width: f64,
+    height: f64,
+    /// Column widths: [type_col, name_col, keys_col]
+    col_widths: [f64; 3],
+}
+
+/// Side of an entity box where edges can attach
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum AttachmentSide {
+    Top,
+    Bottom,
+    Left,
+    Right,
+}
+
+/// Information about an edge's attachment points for distribution calculation
+#[derive(Debug, Clone)]
+struct EdgeAttachment {
+    /// Index in the relationships list
+    relationship_idx: usize,
+    /// Side of entity A where this edge attaches
+    side_a: AttachmentSide,
+    /// Side of entity B where this edge attaches
+    side_b: AttachmentSide,
+    /// Entity A name
+    entity_a: String,
+    /// Entity B name
+    entity_b: String,
+}
+
+/// Pre-computed attachment position for an edge endpoint
+#[derive(Debug, Clone, Copy)]
+struct AttachmentPosition {
+    x: f64,
+    y: f64,
+}
+
+/// Determine which side of an entity box an edge should attach to
+/// Based on relative positions of the two entities
+///
+/// For diagonal edges (significant horizontal AND vertical offset), mermaid uses:
+/// - Source entity: attaches to the side facing the major axis direction (bottom if target is below)
+/// - Target entity: attaches to the side facing WHERE the source is horizontally (left if source is left)
+///
+/// This creates visually pleasing curved edges that approach from the appropriate direction.
+#[allow(clippy::too_many_arguments)]
+fn determine_attachment_sides(
+    x1: f64,
+    y1: f64,
+    w1: f64,
+    h1: f64,
+    x2: f64,
+    y2: f64,
+    w2: f64,
+    h2: f64,
+) -> (AttachmentSide, AttachmentSide) {
+    let center1_x = x1 + w1 / 2.0;
+    let center1_y = y1 + h1 / 2.0;
+    let center2_x = x2 + w2 / 2.0;
+    let center2_y = y2 + h2 / 2.0;
+
+    let dx = center2_x - center1_x; // positive = B is right of A
+    let dy = center2_y - center1_y; // positive = B is below A
+
+    // Threshold for "significant" offset (in pixels)
+    // If horizontal offset exceeds this AND we have vertical dominance,
+    // the target should use its horizontal side
+    let diagonal_threshold = 50.0;
+
+    // Source entity (A): use the side facing the major axis direction to B
+    let side_a = if dy.abs() > dx.abs() {
+        if dy > 0.0 {
+            AttachmentSide::Bottom
+        } else {
+            AttachmentSide::Top
+        }
+    } else if dx > 0.0 {
+        AttachmentSide::Right
+    } else {
+        AttachmentSide::Left
+    };
+
+    // Target entity (B): for diagonal edges, use the side facing WHERE A is
+    // This matches mermaid's behavior for ORDER/PRODUCT → LINE-ITEM relationships
+    let side_b = if dy.abs() > dx.abs() {
+        // Vertical dominates
+        if dx.abs() > diagonal_threshold {
+            // Significant horizontal offset - use horizontal side facing source
+            if dx > 0.0 {
+                AttachmentSide::Left // A is to the left, so B uses left side
+            } else {
+                AttachmentSide::Right // A is to the right, so B uses right side
+            }
+        } else {
+            // Small horizontal offset - use vertical side (straight line)
+            if dy > 0.0 {
+                AttachmentSide::Top
+            } else {
+                AttachmentSide::Bottom
+            }
+        }
+    } else {
+        // Horizontal dominates
+        if dy.abs() > diagonal_threshold {
+            // Significant vertical offset - use vertical side facing source
+            if dy > 0.0 {
+                AttachmentSide::Top // A is above, so B uses top side
+            } else {
+                AttachmentSide::Bottom // A is below, so B uses bottom side
+            }
+        } else {
+            // Small vertical offset - use horizontal side (straight line)
+            if dx > 0.0 {
+                AttachmentSide::Left
+            } else {
+                AttachmentSide::Right
+            }
+        }
+    };
+
+    (side_a, side_b)
+}
+
+/// Adjust dagre bend_points to properly intersect entity boundaries
+///
+/// Dagre computes edge paths between node centers, but we need the edges to
+/// attach to the correct sides of entity boxes based on relative entity positions.
+/// This determines which side each entity should use based on their layout positions,
+/// then calculates intersection points on those specific sides.
+fn adjust_bend_points_for_intersection(
+    bend_points: &[Point],
+    entity_a_name: &str,
+    entity_b_name: &str,
+    entity_positions: &HashMap<String, (f64, f64)>,
+    entity_dimensions: &HashMap<String, EntityDimensions>,
+) -> Vec<Point> {
+    if bend_points.len() < 2 {
+        return bend_points.to_vec();
+    }
+
+    // Get both entities' positions and dimensions
+    let a_pos = entity_positions.get(entity_a_name);
+    let b_pos = entity_positions.get(entity_b_name);
+    let a_dims = entity_dimensions.get(entity_a_name);
+    let b_dims = entity_dimensions.get(entity_b_name);
+
+    // Need both entities to calculate attachment sides
+    let (Some(&(ax, ay)), Some(&(bx, by)), Some(a_dims), Some(b_dims)) =
+        (a_pos, b_pos, a_dims, b_dims)
+    else {
+        return bend_points.to_vec();
+    };
+
+    // Determine which sides each entity should use based on their relative positions
+    let (side_a, side_b) = determine_attachment_sides(
+        ax,
+        ay,
+        a_dims.width,
+        a_dims.height,
+        bx,
+        by,
+        b_dims.width,
+        b_dims.height,
+    );
+
+    let mut adjusted = bend_points.to_vec();
+
+    // Calculate intersection point on entity A's determined side
+    let (start_x, start_y) =
+        calculate_side_intersection(ax, ay, a_dims.width, a_dims.height, side_a);
+    adjusted[0] = Point {
+        x: start_x,
+        y: start_y,
+    };
+
+    // Calculate intersection point on entity B's determined side
+    let last_idx = adjusted.len() - 1;
+    let (end_x, end_y) = calculate_side_intersection(bx, by, b_dims.width, b_dims.height, side_b);
+    adjusted[last_idx] = Point { x: end_x, y: end_y };
+
+    adjusted
+}
+
+/// Calculate the intersection point on a specific side of an entity box
+fn calculate_side_intersection(
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+    side: AttachmentSide,
+) -> (f64, f64) {
+    let center_x = x + width / 2.0;
+    let center_y = y + height / 2.0;
+
+    match side {
+        AttachmentSide::Top => (center_x, y),
+        AttachmentSide::Bottom => (center_x, y + height),
+        AttachmentSide::Left => (x, center_y),
+        AttachmentSide::Right => (x + width, center_y),
+    }
+}
+
+/// Calculate distributed attachment positions for edges that share the same entity side
+/// Returns a HashMap from (entity_name, side, edge_index) to attachment position
+fn calculate_distributed_attachments(
+    edge_attachments: &[EdgeAttachment],
+    entity_positions: &HashMap<String, (f64, f64)>,
+    entity_dimensions: &HashMap<String, EntityDimensions>,
+    marker_offset: f64,
+) -> HashMap<(String, AttachmentSide, usize), AttachmentPosition> {
+    let mut result = HashMap::new();
+
+    // Group edges by (entity, side) for both endpoints
+    // Key: (entity_name, side), Value: list of (edge_index, is_start_point)
+    let mut side_edges: HashMap<(String, AttachmentSide), Vec<(usize, bool)>> = HashMap::new();
+
+    for attachment in edge_attachments {
+        // Add entity A attachment (start point)
+        side_edges
+            .entry((attachment.entity_a.clone(), attachment.side_a))
+            .or_default()
+            .push((attachment.relationship_idx, true));
+
+        // Add entity B attachment (end point)
+        side_edges
+            .entry((attachment.entity_b.clone(), attachment.side_b))
+            .or_default()
+            .push((attachment.relationship_idx, false));
+    }
+
+    // Calculate distributed positions for each group
+    for ((entity_name, side), edges) in side_edges.iter() {
+        let Some(&(x, y)) = entity_positions.get(entity_name) else {
+            continue;
+        };
+        let Some(dims) = entity_dimensions.get(entity_name) else {
+            continue;
+        };
+
+        let count = edges.len();
+        if count == 0 {
+            continue;
+        }
+
+        // Calculate attachment positions distributed along the side
+        for (i, &(edge_idx, _is_start)) in edges.iter().enumerate() {
+            let position = calculate_distributed_position(
+                x,
+                y,
+                dims.width,
+                dims.height,
+                *side,
+                i,
+                count,
+                marker_offset,
+            );
+            result.insert((entity_name.clone(), *side, edge_idx), position);
+        }
+    }
+
+    result
+}
+
+/// Calculate a single distributed attachment position
+#[allow(clippy::too_many_arguments)]
+fn calculate_distributed_position(
+    entity_x: f64,
+    entity_y: f64,
+    entity_width: f64,
+    entity_height: f64,
+    side: AttachmentSide,
+    index: usize,
+    total: usize,
+    marker_offset: f64,
+) -> AttachmentPosition {
+    // Distribute points evenly along the side
+    // For N points, divide the side into N+1 segments and place points at segment boundaries
+    let fraction = (index as f64 + 1.0) / (total as f64 + 1.0);
+
+    match side {
+        AttachmentSide::Top => {
+            let x = entity_x + entity_width * fraction;
+            let y = entity_y - marker_offset;
+            AttachmentPosition { x, y }
+        }
+        AttachmentSide::Bottom => {
+            let x = entity_x + entity_width * fraction;
+            let y = entity_y + entity_height + marker_offset;
+            AttachmentPosition { x, y }
+        }
+        AttachmentSide::Left => {
+            let x = entity_x - marker_offset;
+            let y = entity_y + entity_height * fraction;
+            AttachmentPosition { x, y }
+        }
+        AttachmentSide::Right => {
+            let x = entity_x + entity_width + marker_offset;
+            let y = entity_y + entity_height * fraction;
+            AttachmentPosition { x, y }
+        }
+    }
+}
+
+/// Calculate entity dimensions based on content
+fn calculate_entity_dimensions(
+    entity: &Entity,
+    display_name: &str,
+    header_height: f64,
+    row_height: f64,
+    font_size: f64,
+    padding: f64,
+) -> EntityDimensions {
+    // Character width estimation for trebuchet ms font
+    // Mermaid uses actual getBBox() measurements, we estimate based on font metrics
+    // Average character width is ~0.55-0.65 of font size for proportional fonts
+    let char_width = font_size * 0.65;
+    let header_char_width = 14.0 * 0.65; // Header uses font-size 14
+
+    // Calculate column widths from content
+    let mut max_type_width = 0.0_f64;
+    let mut max_name_width = 0.0_f64;
+    let mut max_keys_width = 0.0_f64;
+
+    for attr in &entity.attributes {
+        let type_width = attr.attr_type.len() as f64 * char_width;
+        let name_width = attr.name.len() as f64 * char_width;
+        let keys_str: String = attr
+            .keys
+            .iter()
+            .map(|k| k.as_str())
+            .collect::<Vec<_>>()
+            .join(",");
+        let keys_width = keys_str.len() as f64 * char_width;
+
+        max_type_width = max_type_width.max(type_width);
+        max_name_width = max_name_width.max(name_width);
+        max_keys_width = max_keys_width.max(keys_width);
+    }
+
+    // Column padding matching mermaid's entityPadding behavior
+    // Mermaid uses: widthPadding = entityPadding / 3 (default 10/3 ≈ 3.33)
+    // And applies widthPaddingFactor (4-8 depending on columns)
+    // Tuned for visual match
+    let col_padding = 12.0;
+    let col_right_padding = 10.0;
+    let type_col_width = max_type_width + col_padding + col_right_padding;
+    let name_col_width = max_name_width + col_padding + col_right_padding;
+    let keys_col_width = if max_keys_width > 0.0 {
+        max_keys_width + col_padding + col_right_padding
+    } else {
+        col_padding + col_right_padding // Minimum width for empty keys column
+    };
+
+    // Calculate header width requirement
+    let header_width = display_name.len() as f64 * header_char_width + padding * 6.0;
+
+    // Total entity width is max of header and sum of columns
+    let content_width = type_col_width + name_col_width + keys_col_width;
+    let total_width = content_width.max(header_width);
+
+    // Minimum width matching mermaid's conf.minEntityWidth (default ~100)
+    let min_width = 100.0;
+    let width = total_width.max(min_width);
+
+    // Height based on rows
+    let height = if entity.attributes.is_empty() {
+        header_height + padding * 2.0
+    } else {
+        header_height + (entity.attributes.len() as f64) * row_height + padding * 2.0
+    };
+
+    EntityDimensions {
+        width,
+        height,
+        col_widths: [type_col_width, name_col_width, keys_col_width],
+    }
+}
 
 /// Implement ToLayoutGraph for ErDb to enable proper DAG layout
 impl ToLayoutGraph for ErDb {
@@ -16,18 +398,19 @@ impl ToLayoutGraph for ErDb {
         let mut graph = LayoutGraph::new("er");
 
         // Set layout options from diagram direction
+        // Spacing tuned to match mermaid.js visual output
         graph.options = LayoutOptions {
             direction: self.preferred_direction(),
-            node_spacing: 60.0,
-            layer_spacing: 80.0,
-            padding: Padding::uniform(30.0),
+            node_spacing: 75.0,
+            layer_spacing: 70.0,
+            padding: Padding::uniform(20.0),
             ..Default::default()
         };
 
-        // Layout constants for entity sizing
-        let entity_width = 160.0;
-        let entity_header_height = 30.0;
-        let attr_row_height = 20.0;
+        // Layout constants (matching mermaid.js)
+        let entity_header_height = 42.75;
+        let attr_row_height = 42.75;
+        let attr_font_size = 12.0;
         let padding = 8.0;
 
         // Convert entities to layout nodes
@@ -38,13 +421,22 @@ impl ToLayoutGraph for ErDb {
         sorted_entities.sort_by(|a, b| a.0.cmp(b.0));
 
         for (name, entity) in &sorted_entities {
-            // Calculate entity height based on attributes
-            let height = entity_header_height
-                + (entity.attributes.len() as f64) * attr_row_height
-                + padding * 2.0;
-            let height = height.max(entity_header_height + padding * 2.0);
+            // Calculate dynamic entity dimensions
+            let display_name = if !entity.alias.is_empty() {
+                &entity.alias
+            } else {
+                &entity.label
+            };
+            let dims = calculate_entity_dimensions(
+                entity,
+                display_name,
+                entity_header_height,
+                attr_row_height,
+                attr_font_size,
+                padding,
+            );
 
-            let node = LayoutNode::new(&entity.id, entity_width, height)
+            let node = LayoutNode::new(&entity.id, dims.width, dims.height)
                 .with_shape(NodeShape::Rectangle)
                 .with_label(name.as_str());
 
@@ -86,10 +478,10 @@ impl ToLayoutGraph for ErDb {
 pub fn render_er(db: &ErDb, config: &RenderConfig) -> Result<String> {
     let mut doc = SvgDocument::new();
 
-    // Layout constants
-    let entity_width = 160.0;
-    let entity_header_height = 30.0;
-    let attr_row_height = 20.0;
+    // Layout constants matching mermaid.js dimensions
+    let entity_header_height = 42.75; // Matches mermaid's row height
+    let attr_row_height = 42.75; // Each attribute row is same height as header
+    let attr_font_size = 12.0;
     let margin = 50.0;
     let padding = 8.0;
 
@@ -114,16 +506,23 @@ pub fn render_er(db: &ErDb, config: &RenderConfig) -> Result<String> {
         return Ok(doc.to_string());
     }
 
-    // Calculate entity heights
-    let mut entity_heights: HashMap<String, f64> = HashMap::new();
+    // Calculate entity dimensions (width, height, column widths)
+    let mut entity_dimensions: HashMap<String, EntityDimensions> = HashMap::new();
     for (name, entity) in entities {
-        let height = entity_header_height
-            + (entity.attributes.len() as f64) * attr_row_height
-            + padding * 2.0;
-        entity_heights.insert(
-            name.clone(),
-            height.max(entity_header_height + padding * 2.0),
+        let display_name = if !entity.alias.is_empty() {
+            &entity.alias
+        } else {
+            &entity.label
+        };
+        let dims = calculate_entity_dimensions(
+            entity,
+            display_name,
+            entity_header_height,
+            attr_row_height,
+            attr_font_size,
+            padding,
         );
+        entity_dimensions.insert(name.clone(), dims);
     }
 
     // Sort entities for consistent ordering
@@ -153,6 +552,15 @@ pub fn render_er(db: &ErDb, config: &RenderConfig) -> Result<String> {
         }
     }
 
+    // Extract edge bend_points from layout result (dagre-computed paths)
+    // The edge ID format is "relationship-{idx}" as defined in to_layout_graph
+    let mut edge_bend_points: HashMap<String, Vec<Point>> = HashMap::new();
+    for edge in &layout_result.edges {
+        if !edge.bend_points.is_empty() {
+            edge_bend_points.insert(edge.id.clone(), edge.bend_points.clone());
+        }
+    }
+
     // Title offset
     let title_offset = if !db.diagram_title.is_empty() {
         40.0
@@ -169,7 +577,7 @@ pub fn render_er(db: &ErDb, config: &RenderConfig) -> Result<String> {
     // Add theme styles
     if config.embed_css {
         doc.add_style(&config.theme.generate_css());
-        doc.add_style(&generate_er_css());
+        doc.add_style(&generate_er_css(&config.theme));
     }
 
     // Add ER marker definitions
@@ -190,36 +598,20 @@ pub fn render_er(db: &ErDb, config: &RenderConfig) -> Result<String> {
         doc.add_element(title_elem);
     }
 
-    // Render each entity
-    for (name, entity) in &sorted_entities {
-        if let Some(&(x, y)) = entity_positions.get(*name) {
-            let height = entity_heights
-                .get(*name)
-                .copied()
-                .unwrap_or(entity_header_height);
-            let entity_elem = render_entity(
-                entity,
-                x,
-                y,
-                entity_width,
-                height,
-                entity_header_height,
-                attr_row_height,
-                padding,
-            );
-            doc.add_element(entity_elem);
-        }
-    }
-
     // Create entity id to name mapping for relationship rendering
     let entity_id_to_name: HashMap<String, String> = entities
         .iter()
         .map(|(name, entity)| (entity.id.clone(), name.clone()))
         .collect();
 
-    // Render relationships
-    for relationship in db.get_relationships() {
-        // Look up entity names from IDs
+    // Marker offset for edge endpoints (space for marker symbols)
+    let marker_offset = 18.0;
+
+    // First pass: collect all edge attachments to calculate distributed positions
+    let mut edge_attachments = Vec::new();
+    let relationships = db.get_relationships();
+
+    for (idx, relationship) in relationships.iter().enumerate() {
         let entity_a_name = entity_id_to_name.get(&relationship.entity_a);
         let entity_b_name = entity_id_to_name.get(&relationship.entity_b);
 
@@ -227,37 +619,139 @@ pub fn render_er(db: &ErDb, config: &RenderConfig) -> Result<String> {
             if let (Some(&(x1, y1)), Some(&(x2, y2))) =
                 (entity_positions.get(a_name), entity_positions.get(b_name))
             {
-                let h1 = entity_heights
-                    .get(a_name)
-                    .copied()
-                    .unwrap_or(entity_header_height);
-                let h2 = entity_heights
-                    .get(b_name)
-                    .copied()
-                    .unwrap_or(entity_header_height);
+                let dims1 = entity_dimensions.get(a_name);
+                let dims2 = entity_dimensions.get(b_name);
+                let h1 = dims1.map(|d| d.height).unwrap_or(entity_header_height);
+                let h2 = dims2.map(|d| d.height).unwrap_or(entity_header_height);
+                let w1 = dims1.map(|d| d.width).unwrap_or(188.0);
+                let w2 = dims2.map(|d| d.width).unwrap_or(188.0);
 
-                let rel_elem = render_relationship(
-                    x1,
-                    y1,
-                    h1,
-                    x2,
-                    y2,
-                    h2,
-                    entity_width,
-                    &relationship.role_a,
-                    relationship.rel_spec.card_a,
-                    relationship.rel_spec.card_b,
-                    relationship.rel_spec.rel_type,
-                );
-                doc.add_element(rel_elem);
+                let (side_a, side_b) = determine_attachment_sides(x1, y1, w1, h1, x2, y2, w2, h2);
+
+                edge_attachments.push(EdgeAttachment {
+                    relationship_idx: idx,
+                    side_a,
+                    side_b,
+                    entity_a: a_name.clone(),
+                    entity_b: b_name.clone(),
+                });
             }
+        }
+    }
+
+    // Calculate distributed attachment positions
+    let distributed_positions = calculate_distributed_attachments(
+        &edge_attachments,
+        &entity_positions,
+        &entity_dimensions,
+        marker_offset,
+    );
+
+    // Render relationships FIRST so entity boxes paint on top and clip markers
+    // (SVG renders later elements on top of earlier ones)
+    for (idx, relationship) in relationships.iter().enumerate() {
+        let edge_id = format!("relationship-{}", idx);
+
+        // Get entity information for intersection calculation
+        let entity_a_name = entity_id_to_name.get(&relationship.entity_a);
+        let entity_b_name = entity_id_to_name.get(&relationship.entity_b);
+
+        // Try to use dagre-computed bend points for the edge path
+        if let Some(bend_points) = edge_bend_points.get(&edge_id) {
+            // Adjust bend_points endpoints to properly intersect entity boundaries
+            // using the mermaid.js intersect-rect algorithm
+            let adjusted_points =
+                if let (Some(a_name), Some(b_name)) = (entity_a_name, entity_b_name) {
+                    adjust_bend_points_for_intersection(
+                        bend_points,
+                        a_name,
+                        b_name,
+                        &entity_positions,
+                        &entity_dimensions,
+                    )
+                } else {
+                    bend_points.clone()
+                };
+
+            let rel_elem = render_relationship_from_bend_points(
+                &adjusted_points,
+                &relationship.role_a,
+                relationship.rel_spec.card_a,
+                relationship.rel_spec.card_b,
+                relationship.rel_spec.rel_type,
+            );
+            doc.add_element(rel_elem);
+        } else {
+            // Fallback: use manual attachment calculation if dagre didn't provide points
+            let entity_a_name = entity_id_to_name.get(&relationship.entity_a);
+            let entity_b_name = entity_id_to_name.get(&relationship.entity_b);
+
+            if let (Some(a_name), Some(b_name)) = (entity_a_name, entity_b_name) {
+                let attachment = edge_attachments.iter().find(|a| a.relationship_idx == idx);
+
+                if let Some(attachment) = attachment {
+                    let start_pos =
+                        distributed_positions.get(&(a_name.clone(), attachment.side_a, idx));
+                    let end_pos =
+                        distributed_positions.get(&(b_name.clone(), attachment.side_b, idx));
+
+                    if let (Some(start), Some(end)) = (start_pos, end_pos) {
+                        let is_side_attachment = matches!(
+                            attachment.side_a,
+                            AttachmentSide::Left | AttachmentSide::Right
+                        );
+
+                        let rel_elem = render_relationship_with_positions(
+                            start.x,
+                            start.y,
+                            end.x,
+                            end.y,
+                            is_side_attachment,
+                            &relationship.role_a,
+                            relationship.rel_spec.card_a,
+                            relationship.rel_spec.card_b,
+                            relationship.rel_spec.rel_type,
+                        );
+                        doc.add_element(rel_elem);
+                    }
+                }
+            }
+        }
+    }
+
+    // Render entities AFTER relationships so entity boxes paint on top,
+    // clipping the crow's feet markers behind the entity boxes
+    for (name, entity) in &sorted_entities {
+        if let Some(&(x, y)) = entity_positions.get(*name) {
+            let dims = entity_dimensions
+                .get(*name)
+                .cloned()
+                .unwrap_or(EntityDimensions {
+                    width: 188.0,
+                    height: entity_header_height + padding * 2.0,
+                    col_widths: [65.8, 75.2, 47.0],
+                });
+            let entity_elem = render_entity(
+                entity,
+                x,
+                y,
+                dims.width,
+                dims.height,
+                entity_header_height,
+                attr_row_height,
+                padding,
+                &dims.col_widths,
+            );
+            doc.add_element(entity_elem);
         }
     }
 
     Ok(doc.to_string())
 }
 
-/// Render an entity box with attributes
+/// Render an entity box with attributes in table-style layout
+/// Matches mermaid.js with alternating row colors and column dividers
+/// Uses CSS classes for theming - colors are defined in generate_er_css()
 #[allow(clippy::too_many_arguments)]
 fn render_entity(
     entity: &Entity,
@@ -267,94 +761,120 @@ fn render_entity(
     height: f64,
     header_height: f64,
     attr_row_height: f64,
-    padding: f64,
+    _padding: f64,
+    col_widths: &[f64; 3],
 ) -> SvgElement {
-    let mut children = Vec::new();
+    // Collect shapes and text separately for correct z-order
+    // SVG renders elements in document order - shapes must come before text
+    let mut shapes = Vec::new();
+    let mut text_elements = Vec::new();
 
-    // Entity box
-    children.push(SvgElement::Rect {
+    let num_attrs = entity.attributes.len();
+
+    // Entity name for display
+    let display_name = if !entity.alias.is_empty() {
+        &entity.alias
+    } else {
+        &entity.label
+    };
+
+    // Entities without attributes: simple box with centered name (like mermaid.js)
+    if num_attrs == 0 {
+        shapes.push(SvgElement::Rect {
+            x,
+            y,
+            width,
+            height,
+            rx: Some(0.0),
+            ry: Some(0.0),
+            attrs: Attrs::new().with_stroke_width(1.3).with_class("entity-box"),
+        });
+
+        text_elements.push(SvgElement::Text {
+            x: x + width / 2.0,
+            y: y + height / 2.0 + 5.0,
+            content: display_name.clone(),
+            attrs: Attrs::new()
+                .with_attr("text-anchor", "middle")
+                .with_class("entity-name")
+                .with_attr("font-size", "14"),
+        });
+
+        let mut children = shapes;
+        children.extend(text_elements);
+
+        return SvgElement::Group {
+            children,
+            attrs: Attrs::new().with_class("entity-node").with_id(&entity.id),
+        };
+    }
+
+    // Column positions calculated from col_widths [type, name, keys]
+    let type_col_end = x + col_widths[0];
+    let name_col_end = type_col_end + col_widths[1];
+
+    // Main entity box (background)
+    shapes.push(SvgElement::Rect {
         x,
         y,
         width,
         height,
         rx: Some(0.0),
         ry: Some(0.0),
-        attrs: Attrs::new()
-            .with_fill("#ECECFF")
-            .with_stroke("#333333")
-            .with_stroke_width(1.0)
-            .with_class("entity-box"),
+        attrs: Attrs::new().with_stroke_width(1.3).with_class("entity-box"),
     });
 
-    // Header background
-    children.push(SvgElement::Rect {
-        x,
-        y,
-        width,
-        height: header_height,
-        rx: Some(0.0),
-        ry: Some(0.0),
-        attrs: Attrs::new()
-            .with_fill("#9370DB")
-            .with_stroke("#333333")
-            .with_stroke_width(1.0)
-            .with_class("entity-header"),
-    });
+    // Attribute rows with alternating backgrounds (starting after header)
+    let content_y = y + header_height;
 
-    // Entity name
-    let display_name = if !entity.alias.is_empty() {
-        &entity.alias
-    } else {
-        &entity.label
-    };
-    children.push(SvgElement::Text {
-        x: x + width / 2.0,
-        y: y + header_height / 2.0 + 5.0,
-        content: display_name.clone(),
-        attrs: Attrs::new()
-            .with_attr("text-anchor", "middle")
-            .with_class("entity-name")
-            .with_attr("font-size", "14")
-            .with_attr("font-weight", "bold")
-            .with_fill("#FFFFFF"),
-    });
+    for (i, attr) in entity.attributes.iter().enumerate() {
+        let row_y = content_y + (i as f64) * attr_row_height;
 
-    // Attributes - rendered as separate text elements per mermaid.js format
-    // Column positions within the entity box
-    let type_x = x + padding;
-    let name_x = x + padding + 50.0; // After type column
-    let keys_x = x + width - padding - 20.0; // Right-aligned
+        // Row background rectangle - CSS classes define colors
+        shapes.push(SvgElement::Rect {
+            x,
+            y: row_y,
+            width,
+            height: attr_row_height,
+            rx: Some(0.0),
+            ry: Some(0.0),
+            attrs: Attrs::new()
+                .with_stroke_width(1.3)
+                .with_class(if i % 2 == 0 {
+                    "row-rect-odd"
+                } else {
+                    "row-rect-even"
+                }),
+        });
 
-    let mut attr_y = y + header_height + padding;
-    for attr in &entity.attributes {
-        attr_y += attr_row_height;
-        let text_y = attr_y - 4.0;
+        // Text y position (vertically centered in row)
+        let text_y = row_y + attr_row_height / 2.0 + 4.0;
 
-        // Type column (e.g., "string", "int", "date")
-        children.push(SvgElement::Text {
-            x: type_x,
+        // Type column text
+        text_elements.push(SvgElement::Text {
+            x: x + 12.0, // left padding
             y: text_y,
             content: attr.attr_type.clone(),
             attrs: Attrs::new()
                 .with_attr("text-anchor", "start")
                 .with_class("entity-attr")
                 .with_class("attribute-type")
-                .with_attr("font-size", "11"),
+                .with_attr("font-size", "12"),
         });
 
-        // Name column (e.g., "name", "email", "id")
-        children.push(SvgElement::Text {
-            x: name_x,
+        // Name column text
+        text_elements.push(SvgElement::Text {
+            x: type_col_end + 12.0,
             y: text_y,
             content: attr.name.clone(),
             attrs: Attrs::new()
                 .with_attr("text-anchor", "start")
                 .with_class("entity-attr")
                 .with_class("attribute-name")
-                .with_attr("font-size", "11"),
+                .with_attr("font-size", "12"),
         });
 
-        // Keys column (e.g., "PK", "FK", "UK" - if present)
+        // Keys column text (if present)
         if !attr.keys.is_empty() {
             let key_str = attr
                 .keys
@@ -362,18 +882,66 @@ fn render_entity(
                 .map(|k| k.as_str())
                 .collect::<Vec<_>>()
                 .join(",");
-            children.push(SvgElement::Text {
-                x: keys_x,
+            text_elements.push(SvgElement::Text {
+                x: name_col_end + 12.0,
                 y: text_y,
                 content: key_str,
                 attrs: Attrs::new()
                     .with_attr("text-anchor", "start")
                     .with_class("entity-attr")
                     .with_class("attribute-key")
-                    .with_attr("font-size", "11"),
+                    .with_attr("font-size", "12"),
             });
         }
     }
+
+    // Divider lines - CSS class defines stroke color
+    let divider_bottom = y + height;
+
+    // Horizontal divider under header
+    shapes.push(SvgElement::Line {
+        x1: x,
+        y1: content_y,
+        x2: x + width,
+        y2: content_y,
+        attrs: Attrs::new().with_stroke_width(1.3).with_class("divider"),
+    });
+
+    // Vertical divider between type and name columns
+    shapes.push(SvgElement::Line {
+        x1: type_col_end,
+        y1: content_y,
+        x2: type_col_end,
+        y2: divider_bottom,
+        attrs: Attrs::new().with_stroke_width(1.3).with_class("divider"),
+    });
+
+    // Vertical divider between name and keys columns
+    shapes.push(SvgElement::Line {
+        x1: name_col_end,
+        y1: content_y,
+        x2: name_col_end,
+        y2: divider_bottom,
+        attrs: Attrs::new().with_stroke_width(1.3).with_class("divider"),
+    });
+
+    // Entity name (centered in header) - text comes after shapes
+    text_elements.insert(
+        0,
+        SvgElement::Text {
+            x: x + width / 2.0,
+            y: y + header_height / 2.0 + 5.0,
+            content: display_name.clone(),
+            attrs: Attrs::new()
+                .with_attr("text-anchor", "middle")
+                .with_class("entity-name")
+                .with_attr("font-size", "14"),
+        },
+    );
+
+    // Combine shapes first, then text (correct z-order)
+    let mut children = shapes;
+    children.extend(text_elements);
 
     SvgElement::Group {
         children,
@@ -381,16 +949,10 @@ fn render_entity(
     }
 }
 
-/// Render a relationship line between two entities using SVG markers
-#[allow(clippy::too_many_arguments)]
-fn render_relationship(
-    x1: f64,
-    y1: f64,
-    h1: f64,
-    x2: f64,
-    y2: f64,
-    h2: f64,
-    width: f64,
+/// Render a relationship line using dagre-computed bend points
+/// This matches mermaid.js behavior by using the same edge routing from dagre
+fn render_relationship_from_bend_points(
+    bend_points: &[Point],
     label: &str,
     card_a: Cardinality,
     card_b: Cardinality,
@@ -398,18 +960,15 @@ fn render_relationship(
 ) -> SvgElement {
     let mut children = Vec::new();
 
-    // Calculate connection points
-    let (start_x, start_y, end_x, end_y) =
-        calculate_connection_points(x1, y1, h1, x2, y2, h2, width);
+    if bend_points.is_empty() {
+        return SvgElement::Group {
+            children,
+            attrs: Attrs::new().with_class("relationship"),
+        };
+    }
 
-    // Calculate midpoint for Bezier curves (like mermaid.js)
-    let mid_y = (start_y + end_y) / 2.0;
-
-    // Create path data for the relationship line (using bezier curves like mermaid.js)
-    let path_d = format!(
-        "M{},{} C{},{} {},{} {},{}",
-        start_x, start_y, start_x, mid_y, end_x, mid_y, end_x, end_y
-    );
+    // Build path using curveBasis interpolation (like mermaid.js uses via d3)
+    let path_d = build_curved_path(bend_points);
 
     // Get marker IDs for cardinalities
     // Note: Due to parser semantics, card_b is the left cardinality (for entity_a/start)
@@ -433,25 +992,214 @@ fn render_relationship(
         attrs: path_attrs,
     });
 
-    // Relationship label
+    // Relationship label (positioned at midpoint of path)
     if !label.is_empty() {
-        let mid_x = (start_x + end_x) / 2.0;
-        let label_mid_y = mid_y;
+        // Calculate label position using geometric midpoint of bend points
+        let label_pos = crate::layout::geometric_midpoint(bend_points);
+        if let Some(mid) = label_pos {
+            // Background for label - uses CSS class for fill color
+            let label_width = (label.len() as f64) * 7.0;
+            children.push(SvgElement::Rect {
+                x: mid.x - label_width / 2.0 - 4.0,
+                y: mid.y - 12.0,
+                width: label_width + 8.0,
+                height: 23.0,
+                rx: Some(0.0),
+                ry: Some(0.0),
+                attrs: Attrs::new().with_class("relationship-label-background"),
+            });
 
-        // Background for label
+            children.push(SvgElement::Text {
+                x: mid.x,
+                y: mid.y + 4.0,
+                content: label.to_string(),
+                attrs: Attrs::new()
+                    .with_attr("text-anchor", "middle")
+                    .with_class("relationship-label")
+                    .with_attr("font-size", "14"),
+            });
+        }
+    }
+
+    SvgElement::Group {
+        children,
+        attrs: Attrs::new().with_class("relationship"),
+    }
+}
+
+/// Render a relationship line with pre-computed attachment positions
+/// Uses CSS classes for theming - colors are defined in generate_er_css()
+#[allow(clippy::too_many_arguments)]
+fn render_relationship_with_positions(
+    start_x: f64,
+    start_y: f64,
+    end_x: f64,
+    end_y: f64,
+    is_side_attachment: bool,
+    label: &str,
+    card_a: Cardinality,
+    card_b: Cardinality,
+    rel_type: Identification,
+) -> SvgElement {
+    let mut children = Vec::new();
+
+    // Create path data for the relationship line
+    // The Bezier curve must approach endpoints perpendicularly for markers to display correctly
+    let path_d = if is_side_attachment {
+        // Side attachment: curve approaches horizontally (perpendicular to side of box)
+        let mid_x = (start_x + end_x) / 2.0;
+        format!(
+            "M{},{} C{},{} {},{} {},{}",
+            start_x, start_y, mid_x, start_y, mid_x, end_y, end_x, end_y
+        )
+    } else {
+        // Top/bottom attachment: curve approaches vertically (perpendicular to top/bottom)
+        let mid_y = (start_y + end_y) / 2.0;
+        format!(
+            "M{},{} C{},{} {},{} {},{}",
+            start_x, start_y, start_x, mid_y, end_x, mid_y, end_x, end_y
+        )
+    };
+
+    // Get marker IDs for cardinalities
+    // Note: Due to parser semantics, card_b is the left cardinality (for entity_a/start)
+    // and card_a is the right cardinality (for entity_b/end)
+    let marker_start = cardinality_to_marker_id(card_b, false);
+    let marker_end = cardinality_to_marker_id(card_a, true);
+
+    // Build path attributes with markers
+    let mut path_attrs = Attrs::new()
+        .with_class("relationshipLine")
+        .with_attr("marker-start", &format!("url(#{})", marker_start))
+        .with_attr("marker-end", &format!("url(#{})", marker_end));
+
+    // Dotted line for non-identifying relationships
+    if rel_type == Identification::NonIdentifying {
+        path_attrs = path_attrs.with_stroke_dasharray("3");
+    }
+
+    children.push(SvgElement::Path {
+        d: path_d,
+        attrs: path_attrs,
+    });
+
+    // Relationship label (positioned at midpoint of path)
+    if !label.is_empty() {
+        let label_mid_x = (start_x + end_x) / 2.0;
+        let label_mid_y = (start_y + end_y) / 2.0;
+
+        // Background for label - uses CSS class for fill color
         let label_width = (label.len() as f64) * 7.0;
         children.push(SvgElement::Rect {
-            x: mid_x - label_width / 2.0 - 4.0,
+            x: label_mid_x - label_width / 2.0 - 4.0,
             y: label_mid_y - 12.0,
             width: label_width + 8.0,
             height: 23.0,
             rx: Some(0.0),
             ry: Some(0.0),
-            attrs: Attrs::new().with_class("background").with_fill("#FFFFFF"),
+            attrs: Attrs::new().with_class("relationship-label-background"),
         });
 
         children.push(SvgElement::Text {
-            x: mid_x,
+            x: label_mid_x,
+            y: label_mid_y + 4.0,
+            content: label.to_string(),
+            attrs: Attrs::new()
+                .with_attr("text-anchor", "middle")
+                .with_class("relationship-label")
+                .with_attr("font-size", "14"),
+        });
+    }
+
+    SvgElement::Group {
+        children,
+        attrs: Attrs::new().with_class("relationship"),
+    }
+}
+
+/// Render a relationship line between two entities using SVG markers (legacy)
+/// Uses CSS classes for theming - colors are defined in generate_er_css()
+#[allow(dead_code)]
+#[allow(clippy::too_many_arguments)]
+fn render_relationship(
+    x1: f64,
+    y1: f64,
+    h1: f64,
+    w1: f64,
+    x2: f64,
+    y2: f64,
+    h2: f64,
+    w2: f64,
+    label: &str,
+    card_a: Cardinality,
+    card_b: Cardinality,
+    rel_type: Identification,
+) -> SvgElement {
+    let mut children = Vec::new();
+
+    // Calculate connection points and attachment type
+    let (start_x, start_y, end_x, end_y, is_side_attachment) =
+        calculate_connection_points(x1, y1, h1, w1, x2, y2, h2, w2);
+
+    // Create path data for the relationship line
+    // The Bezier curve must approach endpoints perpendicularly for markers to display correctly
+    let path_d = if is_side_attachment {
+        // Side attachment: curve approaches horizontally (perpendicular to side of box)
+        let mid_x = (start_x + end_x) / 2.0;
+        format!(
+            "M{},{} C{},{} {},{} {},{}",
+            start_x, start_y, mid_x, start_y, mid_x, end_y, end_x, end_y
+        )
+    } else {
+        // Top/bottom attachment: curve approaches vertically (perpendicular to top/bottom)
+        let mid_y = (start_y + end_y) / 2.0;
+        format!(
+            "M{},{} C{},{} {},{} {},{}",
+            start_x, start_y, start_x, mid_y, end_x, mid_y, end_x, end_y
+        )
+    };
+
+    // Get marker IDs for cardinalities
+    // Note: Due to parser semantics, card_b is the left cardinality (for entity_a/start)
+    // and card_a is the right cardinality (for entity_b/end)
+    let marker_start = cardinality_to_marker_id(card_b, false);
+    let marker_end = cardinality_to_marker_id(card_a, true);
+
+    // Build path attributes with markers
+    let mut path_attrs = Attrs::new()
+        .with_class("relationshipLine")
+        .with_attr("marker-start", &format!("url(#{})", marker_start))
+        .with_attr("marker-end", &format!("url(#{})", marker_end));
+
+    // Dotted line for non-identifying relationships
+    if rel_type == Identification::NonIdentifying {
+        path_attrs = path_attrs.with_stroke_dasharray("3");
+    }
+
+    children.push(SvgElement::Path {
+        d: path_d,
+        attrs: path_attrs,
+    });
+
+    // Relationship label (positioned at midpoint of path)
+    if !label.is_empty() {
+        let label_mid_x = (start_x + end_x) / 2.0;
+        let label_mid_y = (start_y + end_y) / 2.0;
+
+        // Background for label - uses CSS class for fill color
+        let label_width = (label.len() as f64) * 7.0;
+        children.push(SvgElement::Rect {
+            x: label_mid_x - label_width / 2.0 - 4.0,
+            y: label_mid_y - 12.0,
+            width: label_width + 8.0,
+            height: 23.0,
+            rx: Some(0.0),
+            ry: Some(0.0),
+            attrs: Attrs::new().with_class("relationship-label-background"),
+        });
+
+        children.push(SvgElement::Text {
+            x: label_mid_x,
             y: label_mid_y + 4.0,
             content: label.to_string(),
             attrs: Attrs::new()
@@ -468,97 +1216,143 @@ fn render_relationship(
 }
 
 /// Calculate connection points on entity box edges
+/// Uses a heuristic to prefer side attachment when there's significant horizontal offset,
+/// which better matches mermaid.js behavior for diagonal relationships.
+/// Returns (start_x, start_y, end_x, end_y, is_side_attachment)
+#[allow(clippy::too_many_arguments)]
 fn calculate_connection_points(
     x1: f64,
     y1: f64,
     h1: f64,
+    w1: f64,
     x2: f64,
     y2: f64,
     h2: f64,
-    width: f64,
-) -> (f64, f64, f64, f64) {
-    let center1_x = x1 + width / 2.0;
+    w2: f64,
+) -> (f64, f64, f64, f64, bool) {
+    let center1_x = x1 + w1 / 2.0;
     let center1_y = y1 + h1 / 2.0;
-    let center2_x = x2 + width / 2.0;
+    let center2_x = x2 + w2 / 2.0;
     let center2_y = y2 + h2 / 2.0;
 
     let dx = center2_x - center1_x;
     let dy = center2_y - center1_y;
 
-    // Determine which edges to connect based on relative positions
-    let (start_x, start_y) = if dx.abs() > dy.abs() {
+    // Determine if this is a side attachment (horizontal approach needed)
+    // Use side attachment only when horizontal offset is dominant over vertical
+    // This matches mermaid's behavior: vertical relationships (like ORDER -> LINE-ITEM)
+    // should use bottom-to-top connections even when there's horizontal offset
+    let is_side_attachment = dx.abs() > dy.abs();
+
+    // Marker offset - paths should end before the node boundary so that
+    // markers (crow's feet) extend from the path endpoint TO the node.
+    // The largest markers (oneOrMore, zeroOrMore) extend ~18 units past the path endpoint.
+    let marker_offset = 18.0;
+
+    // Determine attachment for entity 1 (source)
+    // Path starts OFFSET from node boundary so marker-start extends to touch the node
+    let (start_x, start_y) = if is_side_attachment {
         if dx > 0.0 {
-            (x1 + width, center1_y)
+            (x1 + w1 + marker_offset, center1_y) // offset right of right edge
         } else {
-            (x1, center1_y)
+            (x1 - marker_offset, center1_y) // offset left of left edge
         }
     } else if dy > 0.0 {
-        (center1_x, y1 + h1)
+        // Vertical relationship going down - offset below bottom
+        (center1_x, y1 + h1 + marker_offset)
     } else {
-        (center1_x, y1)
+        // Vertical relationship going up - offset above top
+        (center1_x, y1 - marker_offset)
     };
 
-    let (end_x, end_y) = if dx.abs() > dy.abs() {
+    // Determine attachment for entity 2 (target)
+    // Path ends OFFSET from node boundary so marker-end extends to touch the node
+    let (end_x, end_y) = if is_side_attachment {
         if dx > 0.0 {
-            (x2, center2_y)
+            (x2 - marker_offset, center2_y) // offset left of left edge
         } else {
-            (x2 + width, center2_y)
+            (x2 + w2 + marker_offset, center2_y) // offset right of right edge
         }
     } else if dy > 0.0 {
-        (center2_x, y2)
+        // Vertical relationship - offset above top of target
+        (center2_x, y2 - marker_offset)
     } else {
-        (center2_x, y2 + h2)
+        // Vertical relationship going up - offset below bottom
+        (center2_x, y2 + h2 + marker_offset)
     };
 
-    (start_x, start_y, end_x, end_y)
+    (start_x, start_y, end_x, end_y, is_side_attachment)
 }
 
-fn generate_er_css() -> String {
-    r#"
-.er-title {
-  fill: #333333;
-}
+fn generate_er_css(theme: &Theme) -> String {
+    format!(
+        r#"
+.er-title {{
+  fill: {text_color};
+}}
 
-.entity-box {
-  fill: #ECECFF;
-  stroke: #333333;
-}
+.entity-box {{
+  fill: {primary_color};
+  stroke: {border_color};
+}}
 
-.entity-header {
-  fill: #9370DB;
-  stroke: #333333;
-}
+.entity-header {{
+  fill: {border_color};
+  stroke: {border_color};
+}}
 
-.entity-name {
-  fill: #FFFFFF;
+.entity-name {{
+  fill: {text_color};
   font-weight: bold;
-}
+}}
 
-.entity-attr {
-  fill: #333333;
-}
+.entity-attr {{
+  fill: {text_color};
+}}
 
-.relationshipLine {
-  stroke: #333333;
+.relationshipLine {{
+  stroke: {line_color};
   stroke-width: 1;
   fill: none;
-}
+}}
 
-.relationship-label {
-  fill: #333333;
-}
+.relationship-label {{
+  fill: {text_color};
+}}
 
-.marker {
+.relationship-label-background {{
+  fill: {background};
+  opacity: 0.7;
+}}
+
+.marker {{
   fill: none;
-  stroke: #333333;
+  stroke: {line_color};
   stroke-width: 1;
-}
+}}
 
-.marker circle {
-  fill: white;
-}
-"#
-    .to_string()
+.marker circle {{
+  fill: {background};
+}}
+
+.row-rect-odd {{
+  fill: {background};
+}}
+
+.row-rect-even {{
+  fill: {primary_color};
+}}
+
+.divider {{
+  stroke: {border_color};
+}}
+"#,
+        text_color = theme.primary_text_color,
+        primary_color = theme.primary_color,
+        border_color = theme.primary_border_color,
+        line_color = theme.line_color,
+        background = theme.background,
+    )
 }
 
 /// Generate SVG marker definitions for ER diagram cardinality symbols
@@ -878,6 +1672,289 @@ mod tests {
             structure.labels.iter().any(|l| l == "id"),
             "Should have 'id' as a separate label. Got: {:?}",
             structure.labels
+        );
+    }
+
+    #[test]
+    fn test_converging_edges_distribute_attachment_points() {
+        // When multiple edges connect to the same entity side (like ORDER and PRODUCT
+        // both connecting to LINE-ITEM's top), they should be distributed across the
+        // edge rather than all centering at the same point.
+        //
+        // Mermaid behavior (from reference SVG):
+        //   Edge 2: ORDER -> LINE-ITEM: ends at x=237 on LINE-ITEM top
+        //   Edge 3: PRODUCT -> LINE-ITEM: ends at x=348 on LINE-ITEM top
+        // The two edges don't share the same endpoint x coordinate.
+        //
+        // With dagre edge routing, this distribution is handled automatically by
+        // the layout algorithm computing edge paths.
+
+        let input = r#"erDiagram
+    CUSTOMER ||--o{ ORDER : places
+    ORDER ||--|{ LINE-ITEM : contains
+    PRODUCT ||--o{ LINE-ITEM : includes
+    CUSTOMER {
+        string name
+        string email PK
+        string address
+    }
+    ORDER {
+        int orderNumber PK
+        date orderDate
+        string status
+    }
+    PRODUCT {
+        int id PK
+        string name
+        float price
+    }
+"#;
+        let db = parse(input).unwrap();
+        let config = RenderConfig::default();
+        let svg = render_er(&db, &config).unwrap();
+
+        // Parse the SVG structure to extract edge endpoints
+        let structure = SvgStructure::from_svg(&svg).unwrap();
+        let edge_endpoints = &structure.edge_geometry.edge_endpoints;
+
+        // Get edges that connect to LINE-ITEM (the entity at the bottom)
+        // These should have different endpoint x coordinates if properly distributed
+        // LINE-ITEM is at the bottom of the diagram, so we look for edges
+        // whose endpoints are in the lower Y region (end_y > 400)
+        let line_item_edges: Vec<_> = edge_endpoints
+            .iter()
+            .filter(|e| {
+                // Filter for edges whose end points are at high Y (near LINE-ITEM)
+                e.3 > 400.0 // e.3 is end_y
+            })
+            .collect();
+
+        // Should have at least 2 edges connecting to LINE-ITEM
+        assert!(
+            line_item_edges.len() >= 2,
+            "Should have at least 2 edges connecting to LINE-ITEM. \
+             Found {} total edges, {} matching filter. \
+             All edges: {:?}",
+            edge_endpoints.len(),
+            line_item_edges.len(),
+            edge_endpoints
+        );
+
+        // The endpoint X coordinates should NOT be the same
+        // (they should be distributed across LINE-ITEM's top edge)
+        let end_x1 = line_item_edges[0].2; // e.2 is end_x
+        let end_x2 = line_item_edges[1].2;
+        let x_diff = (end_x1 - end_x2).abs();
+
+        assert!(
+            x_diff > 10.0,
+            "Converging edges should have distributed endpoints. \
+             Edge 1 ends at x={:.1}, Edge 2 ends at x={:.1}, diff={:.1}px. \
+             Expected >10px difference for proper distribution.",
+            end_x1,
+            end_x2,
+            x_diff
+        );
+    }
+
+    #[test]
+    fn test_connection_points_vertical_relationship_with_horizontal_offset() {
+        // When entities are arranged with significant vertical separation,
+        // edges should use vertical attachment (bottom-to-top) even with horizontal offset.
+        // This matches mermaid's behavior for ORDER/PRODUCT -> LINE-ITEM relationships.
+
+        // Entity 1 (ORDER-like): at top-left
+        let x1 = 50.0;
+        let y1 = 100.0;
+        let w1 = 150.0;
+        let h1 = 120.0;
+
+        // Entity 2 (LINE-ITEM-like): at bottom-center, horizontally offset
+        let x2 = 200.0;
+        let y2 = 350.0;
+        let w2 = 100.0;
+        let h2 = 60.0;
+
+        let (start_x, start_y, end_x, end_y, is_side) =
+            calculate_connection_points(x1, y1, h1, w1, x2, y2, h2, w2);
+
+        // Should use vertical attachment (bottom of entity1 to top of entity2)
+        // because vertical separation (250) is greater than horizontal separation (175)
+        assert!(
+            !is_side,
+            "Should use vertical attachment when vertical separation dominates. \
+             Entity1 center: ({}, {}), Entity2 center: ({}, {})",
+            x1 + w1 / 2.0,
+            y1 + h1 / 2.0,
+            x2 + w2 / 2.0,
+            y2 + h2 / 2.0
+        );
+
+        // Start should be at bottom center of entity 1, offset for marker
+        // Marker offset is 18.0, so path starts below the bottom edge
+        let expected_start_x = x1 + w1 / 2.0; // 125.0
+        let expected_start_y = y1 + h1 + 18.0; // 238.0 (220 + 18 marker offset)
+        assert!(
+            (start_x - expected_start_x).abs() < 1.0,
+            "Start X should be at center: expected {}, got {}",
+            expected_start_x,
+            start_x
+        );
+        assert!(
+            (start_y - expected_start_y).abs() < 1.0,
+            "Start Y should be offset below bottom edge: expected {}, got {}",
+            expected_start_y,
+            start_y
+        );
+
+        // End should be at top center of entity 2, offset for marker
+        // Marker offset is 18.0, so path ends above the top edge
+        let expected_end_x = x2 + w2 / 2.0; // 250.0
+        let expected_end_y = y2 - 18.0; // 332.0 (350 - 18 marker offset)
+        assert!(
+            (end_x - expected_end_x).abs() < 1.0,
+            "End X should be at center: expected {}, got {}",
+            expected_end_x,
+            end_x
+        );
+        assert!(
+            (end_y - expected_end_y).abs() < 1.0,
+            "End Y should be offset above top edge: expected {}, got {}",
+            expected_end_y,
+            end_y
+        );
+    }
+
+    // =========================================================================
+    // Cypress rendering test ports from mermaid.js erDiagram.spec.js
+    // =========================================================================
+
+    #[test]
+    fn test_cypress_render_cyclical_relationships() {
+        // From: "should render a cyclical ER diagram"
+        // Verifies that A→B→C→A cycle renders without errors
+        let input = r#"erDiagram
+            A ||--|{ B : likes
+            B ||--|{ C : likes
+            C ||--|{ A : likes"#;
+        let db = parse(input).unwrap();
+        let config = RenderConfig::default();
+        let svg = render_er(&db, &config).unwrap();
+
+        // Should have 3 entities
+        let structure = SvgStructure::from_svg(&svg).unwrap();
+        assert_eq!(structure.edge_count, 3, "Should have 3 relationship edges");
+
+        // All 3 entities should be rendered
+        assert!(svg.contains(">A<"), "Should contain entity A");
+        assert!(svg.contains(">B<"), "Should contain entity B");
+        assert!(svg.contains(">C<"), "Should contain entity C");
+    }
+
+    #[test]
+    fn test_cypress_render_entities_no_relationships() {
+        // From: "should render entities that have no relationships"
+        let input = r#"erDiagram
+            DEAD_PARROT
+            HERMIT
+            RECLUSE
+            SOCIALITE }o--o{ SOCIALITE : "interacts with"
+            RECLUSE }o--o{ SOCIALITE : avoids"#;
+        let db = parse(input).unwrap();
+        let config = RenderConfig::default();
+        let svg = render_er(&db, &config).unwrap();
+
+        // All 4 entities should be rendered even though some have no relationships
+        assert!(
+            svg.contains(">DEAD_PARROT<"),
+            "Should render standalone entity DEAD_PARROT"
+        );
+        assert!(
+            svg.contains(">HERMIT<"),
+            "Should render standalone entity HERMIT"
+        );
+        assert!(svg.contains(">RECLUSE<"), "Should render entity RECLUSE");
+        assert!(
+            svg.contains(">SOCIALITE<"),
+            "Should render entity SOCIALITE"
+        );
+    }
+
+    #[test]
+    fn test_cypress_render_multiple_relationships_same_entities() {
+        // From: "should render an ER diagram with multiple relationships between the same two entities"
+        let input = r#"erDiagram
+            CUSTOMER ||--|{ ADDRESS : "invoiced at"
+            CUSTOMER ||--|{ ADDRESS : "receives goods at""#;
+        let db = parse(input).unwrap();
+        let config = RenderConfig::default();
+        let svg = render_er(&db, &config).unwrap();
+
+        // Should have 2 relationship edges
+        let structure = SvgStructure::from_svg(&svg).unwrap();
+        assert_eq!(
+            structure.edge_count, 2,
+            "Should have 2 relationship edges between same entities"
+        );
+
+        // Both labels should appear
+        assert!(
+            svg.contains("invoiced at"),
+            "Should contain first relationship label"
+        );
+        assert!(
+            svg.contains("receives goods at"),
+            "Should contain second relationship label"
+        );
+    }
+
+    #[test]
+    fn test_cypress_render_long_entity_names() {
+        // From: "should render entities and attributes with big and small entity names"
+        let input = r#"erDiagram
+            PRIVATE_FINANCIAL_INSTITUTION {
+              string name
+              int    turnover
+            }
+            PRIVATE_FINANCIAL_INSTITUTION ||..|{ EMPLOYEE : employs
+            EMPLOYEE { bool officer_of_firm }"#;
+        let db = parse(input).unwrap();
+        let config = RenderConfig::default();
+        let svg = render_er(&db, &config).unwrap();
+
+        // Long entity name should be rendered
+        assert!(
+            svg.contains("PRIVATE_FINANCIAL_INSTITUTION"),
+            "Should render long entity name"
+        );
+
+        // Entity box should be wide enough (check that width is reasonable)
+        let structure = SvgStructure::from_svg(&svg).unwrap();
+        // Width should accommodate long entity names
+        assert!(
+            structure.width > 200.0,
+            "SVG should be wide enough for long names, got {}",
+            structure.width
+        );
+    }
+
+    #[test]
+    fn test_cypress_render_self_referencing_relationship() {
+        // From: "should render an ER diagram with a recursive relationship"
+        let input = r#"erDiagram
+            CUSTOMER ||..o{ CUSTOMER : refers
+            CUSTOMER ||--o{ ORDER : places"#;
+        let db = parse(input).unwrap();
+        let config = RenderConfig::default();
+        let svg = render_er(&db, &config).unwrap();
+
+        // Should render without error
+        assert!(svg.contains("<svg"), "Should produce valid SVG");
+
+        // Should have the "refers" label for self-reference
+        assert!(
+            svg.contains("refers"),
+            "Should contain self-referencing relationship label"
         );
     }
 }
