@@ -397,6 +397,8 @@ fn detect_diagram_type(source: &str) -> String {
         "journey".to_string()
     } else if first_line.starts_with("architecture") {
         "architecture".to_string()
+    } else if first_line.starts_with("quadrantchart") {
+        "quadrant".to_string()
     } else if first_line.starts_with("treemap") {
         "treemap".to_string()
     } else if first_line.starts_with("xychart") {
