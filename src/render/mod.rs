@@ -20,6 +20,7 @@ mod sankey;
 mod sequence;
 mod state;
 pub mod svg;
+mod timeline;
 mod treemap;
 mod xychart;
 
@@ -98,6 +99,7 @@ pub fn render_with_config(diagram: &Diagram, config: &RenderConfig) -> Result<St
             gantt::render_gantt(&mut db_clone, config)
         }
         Diagram::Mindmap(db) => mindmap::render_mindmap(db, config),
+        Diagram::Timeline(db) => timeline::render_timeline(db, config),
         Diagram::Requirement(db) => requirement::render_requirement(db, config),
         Diagram::Sankey(db) => sankey::render_sankey(db, config),
         Diagram::Radar(db) => radar::render_radar(db, config),
