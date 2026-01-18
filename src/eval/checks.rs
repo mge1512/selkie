@@ -62,8 +62,113 @@ pub fn check_structure(
     // INFO checks - acceptable variations
     check_extra_labels(selkie, reference, &mut issues);
     check_markers(selkie, reference, &mut issues);
+    check_colors(selkie, reference, &mut issues);
+
+    // ERROR checks - text visibility issues (CSS fill override)
+    check_text_visibility(selkie, &mut issues);
+
+    // WARNING checks - text fill color mismatches
+    check_text_fill_colors(selkie, reference, &mut issues);
 
     issues
+}
+
+/// Check for text visibility issues where CSS fill rules override inline fill attributes
+/// This causes text to have unexpected colors that may be invisible against backgrounds
+fn check_text_visibility(selkie: &SvgStructure, issues: &mut Vec<Issue>) {
+    let visibility_issues = &selkie.color_analysis.text_visibility_issues;
+
+    if !visibility_issues.is_empty() {
+        let mut messages = Vec::new();
+
+        for issue in visibility_issues {
+            let bg_info = if let Some(ref bg) = issue.background_fill {
+                format!(" (background: {})", bg)
+            } else {
+                String::new()
+            };
+
+            messages.push(format!(
+                "Text '{}' has class '{}' with CSS fill '{}' overriding inline fill '{}'{}",
+                issue.text,
+                issue.css_class,
+                issue.css_fill,
+                issue.inline_fill.as_deref().unwrap_or("none"),
+                bg_info
+            ));
+        }
+
+        issues.push(Issue::error(
+            "text_visibility",
+            format!(
+                "TEXT VISIBILITY ISSUE: CSS fill rules override inline text colors, potentially making text invisible:\n  {}",
+                messages.join("\n  ")
+            ),
+        ));
+    }
+}
+
+/// Check for text fill color mismatches between selkie and reference
+/// Reference may use CSS/foreignObject for text colors, selkie uses inline fill
+fn check_text_fill_colors(
+    selkie: &SvgStructure,
+    reference: &SvgStructure,
+    issues: &mut Vec<Issue>,
+) {
+    // Extract text fill colors from raw SVG
+    let selkie_text_fills = extract_text_fill_colors(&selkie.raw_svg);
+    let ref_text_fills = extract_text_fill_colors(&reference.raw_svg);
+
+    // Check if selkie has fill colors on text that reference doesn't
+    let selkie_set: std::collections::HashSet<_> = selkie_text_fills.iter().collect();
+    let ref_set: std::collections::HashSet<_> = ref_text_fills.iter().collect();
+
+    let extra_fills: Vec<_> = selkie_set.difference(&ref_set).cloned().collect();
+
+    if !extra_fills.is_empty() {
+        // Check if we're using white text where reference might use dark text
+        let has_white_text = extra_fills.iter().any(|c| {
+            let c = c.to_lowercase();
+            c == "#fff" || c == "#ffffff" || c == "white"
+        });
+
+        if has_white_text {
+            issues.push(Issue::warning(
+                "text_fill_mismatch",
+                format!(
+                    "Text fill color mismatch: selkie uses {:?} but reference text has no inline fill (uses CSS/foreignObject). Reference text color is typically #333 (dark) via CSS .label class.",
+                    extra_fills
+                ),
+            ));
+        }
+    }
+}
+
+/// Extract fill colors from text elements in raw SVG
+fn extract_text_fill_colors(svg: &str) -> Vec<String> {
+    let mut fills = Vec::new();
+
+    // Simple extraction for text element fills
+    // Look for <text ... fill="..." ...>
+    for part in svg.split("<text") {
+        if let Some(tag_end) = part.find('>') {
+            let tag_content = &part[..tag_end];
+            // Extract fill attribute
+            if let Some(fill_start) = tag_content.find("fill=\"") {
+                let after_fill = &tag_content[fill_start + 6..];
+                if let Some(fill_end) = after_fill.find('"') {
+                    let fill_value = &after_fill[..fill_end];
+                    if !fill_value.is_empty() && fill_value != "none" {
+                        fills.push(fill_value.to_lowercase());
+                    }
+                }
+            }
+        }
+    }
+
+    fills.sort();
+    fills.dedup();
+    fills
 }
 
 /// Check node count - ERROR if mismatch
@@ -437,6 +542,63 @@ fn check_markers(selkie: &SvgStructure, reference: &SvgStructure, issues: &mut V
                 reference.marker_count, selkie.marker_count
             ),
         ));
+    }
+}
+
+/// Check colors - WARNING if fill colors significantly different
+fn check_colors(selkie: &SvgStructure, reference: &SvgStructure, issues: &mut Vec<Issue>) {
+    let selkie_fills: HashSet<_> = selkie.color_analysis.fill_colors.iter().collect();
+    let ref_fills: HashSet<_> = reference.color_analysis.fill_colors.iter().collect();
+
+    // Find colors in reference that are missing in selkie
+    let missing_fills: Vec<_> = ref_fills.difference(&selkie_fills).cloned().collect();
+
+    // Find colors in selkie that aren't in reference
+    let extra_fills: Vec<_> = selkie_fills.difference(&ref_fills).cloned().collect();
+
+    // Report as warning if there are significant color differences
+    if !missing_fills.is_empty() || !extra_fills.is_empty() {
+        let mut msg = String::new();
+
+        if !missing_fills.is_empty() {
+            msg.push_str(&format!("Missing fill colors: {:?}", missing_fills));
+        }
+        if !extra_fills.is_empty() {
+            if !msg.is_empty() {
+                msg.push_str("; ");
+            }
+            msg.push_str(&format!("Extra fill colors: {:?}", extra_fills));
+        }
+
+        // Calculate color match percentage
+        let total_unique = selkie_fills.len().max(ref_fills.len());
+        let matching = selkie_fills.intersection(&ref_fills).count();
+        let match_pct = if total_unique > 0 {
+            (matching as f64 / total_unique as f64) * 100.0
+        } else {
+            100.0
+        };
+
+        if match_pct < 50.0 {
+            // Significant color mismatch
+            issues.push(
+                Issue::warning(
+                    "colors",
+                    format!("Color mismatch ({:.0}% match): {}", match_pct, msg),
+                )
+                .with_values(
+                    format!("{:?}", reference.color_analysis.fill_colors),
+                    format!("{:?}", selkie.color_analysis.fill_colors),
+                ),
+            );
+        } else if match_pct < 80.0 {
+            // Moderate color difference
+            issues.push(Issue::info(
+                "colors",
+                format!("Color differences ({:.0}% match): {}", match_pct, msg),
+            ));
+        }
+        // If >= 80% match, don't report (minor variations are acceptable)
     }
 }
 
@@ -1763,7 +1925,9 @@ mod tests {
     use crate::render::svg::structure::{ShapeCounts, ZOrderAnalysis};
 
     fn make_structure(nodes: usize, edges: usize, labels: Vec<&str>) -> SvgStructure {
-        use crate::render::svg::structure::{EdgeGeometry, FontAnalysis, StrokeAnalysis};
+        use crate::render::svg::structure::{
+            ColorAnalysis, EdgeGeometry, FontAnalysis, StrokeAnalysis,
+        };
         SvgStructure {
             width: 400.0,
             height: 300.0,
@@ -1778,6 +1942,7 @@ mod tests {
             stroke_analysis: StrokeAnalysis::default(),
             edge_geometry: EdgeGeometry::default(),
             font_analysis: FontAnalysis::default(),
+            color_analysis: ColorAnalysis::default(),
         }
     }
 
