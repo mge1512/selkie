@@ -2000,11 +2000,12 @@ fn render_transition(
     };
 
     // Transition path (curved) - colors from CSS via theme
-    // Use stroke-width 0.7 to match mermaid reference (dagre-wrapper)
+    // Use stroke-width 1.3 to match mermaid reference (handDrawnShapeStyles.ts default)
+    // Note: mermaid's v3 renderer uses handDrawn shapes which default to 1.3
     children.push(SvgElement::Path {
         d: path_d,
         attrs: Attrs::new()
-            .with_stroke_width(0.7)
+            .with_stroke_width(1.3)
             .with_fill("none")
             .with_attr("marker-end", "url(#arrow)")
             .with_class("transition-path"),
@@ -3276,5 +3277,42 @@ Cancelled --> [*]
             val_x,
             res_x
         );
+    }
+
+    #[test]
+    fn test_transition_stroke_width_matches_mermaid() {
+        // Mermaid's v3 renderer uses handDrawn shapes which default to strokeWidth 1.3
+        // (see handDrawnShapeStyles.ts default value)
+        // Our rendered SVG should match this for visual parity
+        let input = r#"stateDiagram-v2
+    [*] --> Idle
+    Idle --> Running
+"#;
+        let db = parse(input).expect("Should parse");
+        let config = crate::render::RenderConfig::default();
+        let svg = render_state(&db, &config).expect("Should render");
+
+        // The SVG should contain transition paths with stroke-width="1.3"
+        // to match mermaid's handDrawn shape default
+        assert!(
+            svg.contains(r#"stroke-width="1.3""#),
+            "Transition paths should have stroke-width=\"1.3\" to match mermaid reference. \
+             Found SVG content: {}",
+            &svg[..svg.len().min(500)]
+        );
+
+        // Should not contain the old stroke-width value of 0.7 for transition paths
+        // Note: Other elements may have different stroke-widths (e.g., end state uses 2)
+        let transition_paths: Vec<&str> = svg
+            .lines()
+            .filter(|l| l.contains("transition-path"))
+            .collect();
+        for path in &transition_paths {
+            assert!(
+                !path.contains(r#"stroke-width="0.7""#),
+                "Transition paths should not use stroke-width=\"0.7\" (old value). Found: {}",
+                path
+            );
+        }
     }
 }
