@@ -80,22 +80,7 @@ pub fn render_xychart(db: &XYChartDb, config: &RenderConfig) -> Result<String> {
     };
     doc.add_element(bg);
 
-    // Render title if present
-    if !db.title.is_empty() {
-        let title_elem = SvgElement::Text {
-            x: width / 2.0,
-            y: PADDING,
-            content: db.title.clone(),
-            attrs: Attrs::new()
-                .with_attr("text-anchor", "middle")
-                .with_attr("dominant-baseline", "hanging")
-                .with_class("xychart-title")
-                .with_attr("font-size", "16")
-                .with_attr("font-weight", "bold")
-                .with_fill(&config.theme.primary_text_color),
-        };
-        doc.add_element(title_elem);
-    }
+    // Note: Title is rendered after chart shapes for proper z-order (see render_chart_title)
 
     // Calculate data range
     let (y_min, y_max) = calculate_y_range(db);
@@ -126,6 +111,7 @@ pub fn render_xychart(db: &XYChartDb, config: &RenderConfig) -> Result<String> {
 }
 
 /// Render a vertical chart (x-axis at bottom, y-axis at left)
+/// Z-order: shapes first, then text (matching mermaid reference)
 fn render_vertical_chart(
     doc: &mut SvgDocument,
     db: &XYChartDb,
@@ -134,10 +120,24 @@ fn render_vertical_chart(
 ) {
     let plot_bottom = area.plot_top + area.plot_height;
 
-    // Render axes
-    render_y_axis(
+    // PHASE 1: Render all shapes first (for correct z-order)
+    // Render plot shapes (bars, lines)
+    // Use theme primary_color for bars (matching mermaid reference)
+    let mut line_color_idx = 0;
+    for plot in db.get_plots().iter() {
+        match plot.plot_type {
+            PlotType::Bar => render_vertical_bars(doc, plot, &config.theme.primary_color, area),
+            PlotType::Line => {
+                let color = PLOT_COLORS[line_color_idx % PLOT_COLORS.len()];
+                render_vertical_line(doc, plot, color, area);
+                line_color_idx += 1;
+            }
+        }
+    }
+
+    // Render axis lines and ticks (shapes)
+    render_y_axis_shapes(
         doc,
-        db,
         config,
         area.plot_left,
         area.plot_top,
@@ -146,7 +146,7 @@ fn render_vertical_chart(
         area.y_max,
         false,
     );
-    render_x_axis(
+    render_x_axis_shapes(
         doc,
         db,
         config,
@@ -157,18 +157,33 @@ fn render_vertical_chart(
         false,
     );
 
-    // Render plots
-    for (plot_idx, plot) in db.get_plots().iter().enumerate() {
-        let color = PLOT_COLORS[plot_idx % PLOT_COLORS.len()];
-
-        match plot.plot_type {
-            PlotType::Bar => render_vertical_bars(doc, plot, color, area),
-            PlotType::Line => render_vertical_line(doc, plot, color, area),
-        }
-    }
+    // PHASE 2: Render all text labels (after shapes for z-order)
+    render_chart_title(doc, db, config);
+    render_y_axis_text(
+        doc,
+        db,
+        config,
+        area.plot_left,
+        area.plot_top,
+        area.plot_height,
+        area.y_min,
+        area.y_max,
+        false,
+    );
+    render_x_axis_text(
+        doc,
+        db,
+        config,
+        area.plot_left,
+        plot_bottom,
+        area.plot_width,
+        area.num_points,
+        false,
+    );
 }
 
 /// Render a horizontal chart (x-axis at left, y-axis at top)
+/// Z-order: shapes first, then text (matching mermaid reference)
 fn render_horizontal_chart(
     doc: &mut SvgDocument,
     db: &XYChartDb,
@@ -179,9 +194,24 @@ fn render_horizontal_chart(
     // X-axis (categories) goes on the left (vertical)
     // Y-axis (values) goes on the top (horizontal)
 
-    render_y_axis(
+    // PHASE 1: Render all shapes first (for correct z-order)
+    // Render plot shapes (bars, lines)
+    // Use theme primary_color for bars (matching mermaid reference)
+    let mut line_color_idx = 0;
+    for plot in db.get_plots().iter() {
+        match plot.plot_type {
+            PlotType::Bar => render_horizontal_bars(doc, plot, &config.theme.primary_color, area),
+            PlotType::Line => {
+                let color = PLOT_COLORS[line_color_idx % PLOT_COLORS.len()];
+                render_horizontal_line(doc, plot, color, area);
+                line_color_idx += 1;
+            }
+        }
+    }
+
+    // Render axis lines and ticks (shapes)
+    render_y_axis_shapes(
         doc,
-        db,
         config,
         area.plot_left,
         area.plot_top,
@@ -190,7 +220,7 @@ fn render_horizontal_chart(
         area.y_max,
         true,
     );
-    render_x_axis(
+    render_x_axis_shapes(
         doc,
         db,
         config,
@@ -201,15 +231,29 @@ fn render_horizontal_chart(
         true,
     );
 
-    // Render plots
-    for (plot_idx, plot) in db.get_plots().iter().enumerate() {
-        let color = PLOT_COLORS[plot_idx % PLOT_COLORS.len()];
-
-        match plot.plot_type {
-            PlotType::Bar => render_horizontal_bars(doc, plot, color, area),
-            PlotType::Line => render_horizontal_line(doc, plot, color, area),
-        }
-    }
+    // PHASE 2: Render all text labels (after shapes for z-order)
+    render_chart_title(doc, db, config);
+    render_y_axis_text(
+        doc,
+        db,
+        config,
+        area.plot_left,
+        area.plot_top,
+        area.plot_width,
+        area.y_min,
+        area.y_max,
+        true,
+    );
+    render_x_axis_text(
+        doc,
+        db,
+        config,
+        area.plot_left,
+        area.plot_top,
+        area.plot_height,
+        area.num_points,
+        true,
+    );
 }
 
 /// Render vertical bars for a bar plot
@@ -294,6 +338,7 @@ fn render_horizontal_bars(doc: &mut SvgDocument, plot: &Plot, color: &str, area:
 }
 
 /// Render a line for a line plot (vertical orientation)
+/// Note: Unlike some implementations, mermaid does NOT draw circles at data points
 fn render_vertical_line(doc: &mut SvgDocument, plot: &Plot, color: &str, area: &ChartArea) {
     if plot.data.is_empty() {
         return;
@@ -340,36 +385,11 @@ fn render_vertical_line(doc: &mut SvgDocument, plot: &Plot, color: &str, area: &
             .with_class("xychart-line"),
     };
     doc.add_element(line);
-
-    // Add circles at data points
-    for (i, data_point) in plot.data.iter().enumerate() {
-        let x = if area.num_points > 1 {
-            area.plot_left + x_spacing * i as f64
-        } else {
-            area.plot_left + area.plot_width / 2.0
-        };
-
-        let value_ratio = if y_range != 0.0 {
-            (data_point.value - area.y_min) / y_range
-        } else {
-            0.5
-        };
-        let y = plot_bottom - area.plot_height * value_ratio;
-
-        let point = SvgElement::Circle {
-            cx: x,
-            cy: y,
-            r: 4.0,
-            attrs: Attrs::new()
-                .with_fill(color)
-                .with_stroke(color)
-                .with_class("xychart-point"),
-        };
-        doc.add_element(point);
-    }
+    // Note: mermaid reference does not render circles at data points
 }
 
 /// Render a line for a line plot (horizontal orientation)
+/// Note: Unlike some implementations, mermaid does NOT draw circles at data points
 fn render_horizontal_line(doc: &mut SvgDocument, plot: &Plot, color: &str, area: &ChartArea) {
     if plot.data.is_empty() {
         return;
@@ -416,40 +436,32 @@ fn render_horizontal_line(doc: &mut SvgDocument, plot: &Plot, color: &str, area:
             .with_class("xychart-line"),
     };
     doc.add_element(line);
+    // Note: mermaid reference does not render circles at data points
+}
 
-    // Add circles at data points
-    for (i, data_point) in plot.data.iter().enumerate() {
-        let y = if area.num_points > 1 {
-            area.plot_top + y_spacing * i as f64
-        } else {
-            area.plot_top + area.plot_height / 2.0
-        };
-
-        let value_ratio = if y_range != 0.0 {
-            (data_point.value - area.y_min) / y_range
-        } else {
-            0.5
-        };
-        let x = area.plot_left + area.plot_width * value_ratio;
-
-        let point = SvgElement::Circle {
-            cx: x,
-            cy: y,
-            r: 4.0,
+/// Render chart title - called after shapes for proper z-order
+fn render_chart_title(doc: &mut SvgDocument, db: &XYChartDb, config: &RenderConfig) {
+    if !db.title.is_empty() {
+        let title_elem = SvgElement::Text {
+            x: DEFAULT_WIDTH / 2.0,
+            y: PADDING,
+            content: db.title.clone(),
             attrs: Attrs::new()
-                .with_fill(color)
-                .with_stroke(color)
-                .with_class("xychart-point"),
+                .with_attr("text-anchor", "middle")
+                .with_attr("dominant-baseline", "hanging")
+                .with_class("xychart-title")
+                .with_attr("font-size", "20")
+                .with_attr("font-weight", "bold")
+                .with_fill(&config.theme.primary_text_color),
         };
-        doc.add_element(point);
+        doc.add_element(title_elem);
     }
 }
 
-/// Render the Y-axis
+/// Render Y-axis shapes (axis line and tick marks) - for z-order separation
 #[allow(clippy::too_many_arguments)]
-fn render_y_axis(
+fn render_y_axis_shapes(
     doc: &mut SvgDocument,
-    db: &XYChartDb,
     config: &RenderConfig,
     plot_left: f64,
     plot_top: f64,
@@ -460,10 +472,8 @@ fn render_y_axis(
 ) {
     // Axis line
     let (x1, y1, x2, y2) = if is_horizontal {
-        // Horizontal chart: Y-axis is at top, running horizontally
         (plot_left, plot_top, plot_left + axis_length, plot_top)
     } else {
-        // Vertical chart: Y-axis is at left, running vertically
         (plot_left, plot_top, plot_left, plot_top + axis_length)
     };
 
@@ -471,12 +481,67 @@ fn render_y_axis(
         d: format!("M {} {} L {} {}", x1, y1, x2, y2),
         attrs: Attrs::new()
             .with_stroke(&config.theme.line_color)
-            .with_stroke_width(1.0)
+            .with_stroke_width(2.0)
             .with_fill("none")
             .with_class("xychart-axis"),
     };
     doc.add_element(axis_line);
 
+    // Y-axis tick marks
+    let tick_values = calculate_nice_ticks(y_min, y_max);
+
+    for value in &tick_values {
+        let ratio = if (y_max - y_min).abs() > f64::EPSILON {
+            (value - y_min) / (y_max - y_min)
+        } else {
+            0.5
+        };
+
+        let (tick_x, tick_y) = if is_horizontal {
+            let x = plot_left + axis_length * ratio;
+            (x, plot_top)
+        } else {
+            let y = plot_top + axis_length * (1.0 - ratio);
+            (plot_left, y)
+        };
+
+        let (tick_dx, tick_dy) = if is_horizontal {
+            (0.0, -TICK_LENGTH)
+        } else {
+            (-TICK_LENGTH, 0.0)
+        };
+
+        let tick = SvgElement::Path {
+            d: format!(
+                "M {} {} L {} {}",
+                tick_x,
+                tick_y,
+                tick_x + tick_dx,
+                tick_y + tick_dy
+            ),
+            attrs: Attrs::new()
+                .with_stroke(&config.theme.line_color)
+                .with_stroke_width(2.0)
+                .with_fill("none")
+                .with_class("xychart-tick"),
+        };
+        doc.add_element(tick);
+    }
+}
+
+/// Render Y-axis text (title and labels) - for z-order separation
+#[allow(clippy::too_many_arguments)]
+fn render_y_axis_text(
+    doc: &mut SvgDocument,
+    db: &XYChartDb,
+    config: &RenderConfig,
+    plot_left: f64,
+    plot_top: f64,
+    axis_length: f64,
+    y_min: f64,
+    y_max: f64,
+    is_horizontal: bool,
+) {
     // Y-axis title
     if let Some(YAxisData::Linear(axis_data)) = &db.y_axis {
         if !axis_data.title.is_empty() {
@@ -498,34 +563,102 @@ fn render_y_axis(
                         &format!("rotate({} {} {})", rotation, title_x, title_y),
                     )
                     .with_class("xychart-axis-title")
-                    .with_attr("font-size", "12")
+                    .with_attr("font-size", "16")
                     .with_fill(&config.theme.primary_text_color),
             };
             doc.add_element(title);
         }
     }
 
-    // Y-axis tick marks and labels
-    let num_ticks = 5;
-    let y_range = y_max - y_min;
+    // Y-axis labels
+    let tick_values = calculate_nice_ticks(y_min, y_max);
 
-    for i in 0..=num_ticks {
-        let ratio = i as f64 / num_ticks as f64;
-        let value = y_min + y_range * ratio;
-
-        let (tick_x, tick_y, label_x, label_y) = if is_horizontal {
-            let x = plot_left + axis_length * ratio;
-            (x, plot_top, x, plot_top - 10.0)
+    for value in &tick_values {
+        let ratio = if (y_max - y_min).abs() > f64::EPSILON {
+            (value - y_min) / (y_max - y_min)
         } else {
-            let y = plot_top + axis_length * (1.0 - ratio); // Inverted for y-axis
-            (plot_left, y, plot_left - 10.0, y)
+            0.5
         };
 
-        // Tick mark
-        let (tick_dx, tick_dy) = if is_horizontal {
-            (0.0, -TICK_LENGTH)
+        let (label_x, label_y) = if is_horizontal {
+            let x = plot_left + axis_length * ratio;
+            (x, plot_top - 10.0)
         } else {
+            let y = plot_top + axis_length * (1.0 - ratio);
+            (plot_left - 10.0, y)
+        };
+
+        let label_text = format_number(*value);
+        let label = SvgElement::Text {
+            x: label_x,
+            y: label_y,
+            content: label_text,
+            attrs: Attrs::new()
+                .with_attr("text-anchor", if is_horizontal { "middle" } else { "end" })
+                .with_attr(
+                    "dominant-baseline",
+                    if is_horizontal { "auto" } else { "middle" },
+                )
+                .with_class("xychart-axis-label")
+                .with_attr("font-size", "14")
+                .with_fill(&config.theme.primary_text_color),
+        };
+        doc.add_element(label);
+    }
+}
+
+/// Render X-axis shapes (axis line and tick marks) - for z-order separation
+#[allow(clippy::too_many_arguments)]
+fn render_x_axis_shapes(
+    doc: &mut SvgDocument,
+    db: &XYChartDb,
+    config: &RenderConfig,
+    plot_left: f64,
+    axis_y: f64,
+    axis_length: f64,
+    num_points: usize,
+    is_horizontal: bool,
+) {
+    // Axis line
+    let (x1, y1, x2, y2) = if is_horizontal {
+        (plot_left, axis_y, plot_left, axis_y + axis_length)
+    } else {
+        (plot_left, axis_y, plot_left + axis_length, axis_y)
+    };
+
+    let axis_line = SvgElement::Path {
+        d: format!("M {} {} L {} {}", x1, y1, x2, y2),
+        attrs: Attrs::new()
+            .with_stroke(&config.theme.line_color)
+            .with_stroke_width(2.0)
+            .with_fill("none")
+            .with_class("xychart-axis"),
+    };
+    doc.add_element(axis_line);
+
+    // Get category labels for tick count
+    let categories = get_x_axis_categories(db, num_points);
+
+    // X-axis tick marks
+    let spacing = if num_points > 0 {
+        axis_length / num_points as f64
+    } else {
+        axis_length
+    };
+
+    for i in 0..categories.len() {
+        let (tick_x, tick_y) = if is_horizontal {
+            let y = axis_y + spacing * (i as f64 + 0.5);
+            (plot_left, y)
+        } else {
+            let x = plot_left + spacing * (i as f64 + 0.5);
+            (x, axis_y)
+        };
+
+        let (tick_dx, tick_dy) = if is_horizontal {
             (-TICK_LENGTH, 0.0)
+        } else {
+            (0.0, TICK_LENGTH)
         };
 
         let tick = SvgElement::Path {
@@ -538,35 +671,17 @@ fn render_y_axis(
             ),
             attrs: Attrs::new()
                 .with_stroke(&config.theme.line_color)
-                .with_stroke_width(1.0)
+                .with_stroke_width(2.0)
                 .with_fill("none")
                 .with_class("xychart-tick"),
         };
         doc.add_element(tick);
-
-        // Label
-        let label_text = format_number(value);
-        let label = SvgElement::Text {
-            x: label_x,
-            y: label_y,
-            content: label_text,
-            attrs: Attrs::new()
-                .with_attr("text-anchor", if is_horizontal { "middle" } else { "end" })
-                .with_attr(
-                    "dominant-baseline",
-                    if is_horizontal { "auto" } else { "middle" },
-                )
-                .with_class("xychart-axis-label")
-                .with_attr("font-size", "10")
-                .with_fill(&config.theme.primary_text_color),
-        };
-        doc.add_element(label);
     }
 }
 
-/// Render the X-axis
+/// Render X-axis text (title and labels) - for z-order separation
 #[allow(clippy::too_many_arguments)]
-fn render_x_axis(
+fn render_x_axis_text(
     doc: &mut SvgDocument,
     db: &XYChartDb,
     config: &RenderConfig,
@@ -576,25 +691,6 @@ fn render_x_axis(
     num_points: usize,
     is_horizontal: bool,
 ) {
-    // Axis line
-    let (x1, y1, x2, y2) = if is_horizontal {
-        // Horizontal chart: X-axis is at left, running vertically
-        (plot_left, axis_y, plot_left, axis_y + axis_length)
-    } else {
-        // Vertical chart: X-axis is at bottom, running horizontally
-        (plot_left, axis_y, plot_left + axis_length, axis_y)
-    };
-
-    let axis_line = SvgElement::Path {
-        d: format!("M {} {} L {} {}", x1, y1, x2, y2),
-        attrs: Attrs::new()
-            .with_stroke(&config.theme.line_color)
-            .with_stroke_width(1.0)
-            .with_fill("none")
-            .with_class("xychart-axis"),
-    };
-    doc.add_element(axis_line);
-
     // Get category labels
     let categories = get_x_axis_categories(db, num_points);
 
@@ -624,14 +720,14 @@ fn render_x_axis(
                         &format!("rotate({} {} {})", rotation, title_x, title_y),
                     )
                     .with_class("xychart-axis-title")
-                    .with_attr("font-size", "12")
+                    .with_attr("font-size", "16")
                     .with_fill(&config.theme.primary_text_color),
             };
             doc.add_element(title_elem);
         }
     }
 
-    // X-axis tick marks and labels
+    // X-axis labels
     let spacing = if num_points > 0 {
         axis_length / num_points as f64
     } else {
@@ -639,38 +735,14 @@ fn render_x_axis(
     };
 
     for (i, category) in categories.iter().enumerate() {
-        let (tick_x, tick_y, label_x, label_y) = if is_horizontal {
+        let (label_x, label_y) = if is_horizontal {
             let y = axis_y + spacing * (i as f64 + 0.5);
-            (plot_left, y, plot_left - 10.0, y)
+            (plot_left - 10.0, y)
         } else {
             let x = plot_left + spacing * (i as f64 + 0.5);
-            (x, axis_y, x, axis_y + 15.0)
+            (x, axis_y + 15.0)
         };
 
-        // Tick mark
-        let (tick_dx, tick_dy) = if is_horizontal {
-            (-TICK_LENGTH, 0.0)
-        } else {
-            (0.0, TICK_LENGTH)
-        };
-
-        let tick = SvgElement::Path {
-            d: format!(
-                "M {} {} L {} {}",
-                tick_x,
-                tick_y,
-                tick_x + tick_dx,
-                tick_y + tick_dy
-            ),
-            attrs: Attrs::new()
-                .with_stroke(&config.theme.line_color)
-                .with_stroke_width(1.0)
-                .with_fill("none")
-                .with_class("xychart-tick"),
-        };
-        doc.add_element(tick);
-
-        // Label
         let label = SvgElement::Text {
             x: label_x,
             y: label_y,
@@ -682,7 +754,7 @@ fn render_x_axis(
                     if is_horizontal { "middle" } else { "hanging" },
                 )
                 .with_class("xychart-axis-label")
-                .with_attr("font-size", "10")
+                .with_attr("font-size", "14")
                 .with_fill(&config.theme.primary_text_color),
         };
         doc.add_element(label);
@@ -763,6 +835,60 @@ fn format_number(value: f64) -> String {
     }
 }
 
+/// Calculate "nice" tick values similar to D3's scale.ticks()
+/// This generates evenly spaced, human-friendly tick values
+fn calculate_nice_ticks(min: f64, max: f64) -> Vec<f64> {
+    let range = max - min;
+    if range <= 0.0 {
+        return vec![min];
+    }
+
+    // Target approximately 10 ticks (like D3's default)
+    let target_ticks = 10;
+
+    // Calculate the rough step size
+    let rough_step = range / target_ticks as f64;
+
+    // Find a "nice" step size (1, 2, 5, 10, 20, 50, etc.)
+    let magnitude = 10.0_f64.powf(rough_step.log10().floor());
+    let residual = rough_step / magnitude;
+
+    let nice_step = if residual <= 1.0 {
+        magnitude
+    } else if residual <= 2.0 {
+        2.0 * magnitude
+    } else if residual <= 5.0 {
+        5.0 * magnitude
+    } else {
+        10.0 * magnitude
+    };
+
+    // Generate ticks starting from a "nice" value
+    let nice_min = (min / nice_step).floor() * nice_step;
+    let nice_max = (max / nice_step).ceil() * nice_step;
+
+    let mut ticks = Vec::new();
+    let mut tick = nice_min;
+
+    while tick <= nice_max + f64::EPSILON {
+        // Only include ticks within the actual data range
+        if tick >= min - f64::EPSILON && tick <= max + f64::EPSILON {
+            ticks.push(tick);
+        }
+        tick += nice_step;
+    }
+
+    // Ensure we have at least min and max
+    if ticks.is_empty() {
+        ticks.push(min);
+        if (max - min).abs() > f64::EPSILON {
+            ticks.push(max);
+        }
+    }
+
+    ticks
+}
+
 /// Truncate a label if too long
 fn truncate_label(label: &str, max_len: usize) -> String {
     if label.len() > max_len {
@@ -787,7 +913,7 @@ fn generate_xychart_css(theme: &crate::render::svg::Theme) -> String {
 
 .xychart-axis {{
   stroke: {line_color};
-  stroke-width: 1px;
+  stroke-width: 2px;
 }}
 
 .xychart-axis-title {{
@@ -802,7 +928,7 @@ fn generate_xychart_css(theme: &crate::render::svg::Theme) -> String {
 
 .xychart-tick {{
   stroke: {line_color};
-  stroke-width: 1px;
+  stroke-width: 2px;
 }}
 
 .xychart-bar {{

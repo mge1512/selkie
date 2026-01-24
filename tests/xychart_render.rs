@@ -595,3 +595,102 @@ fn test_numeric_x_axis_range() {
 
     assert_valid_svg(&svg);
 }
+
+// ============================================================================
+// Visual Parity Tests (Mermaid Reference Matching)
+// ============================================================================
+
+#[test]
+fn test_y_axis_tick_count_matches_reference() {
+    // Reference implementation generates ~10 ticks for a 0-100 range
+    // (0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100)
+    let input = r#"xychart
+        x-axis [Jan, Feb, Mar, Apr, May, Jun]
+        y-axis "Sales (units)" 0 --> 100
+        bar [20, 35, 45, 62, 78, 91]"#;
+
+    let diagram = parse(input).expect("Failed to parse chart");
+    let svg = render(&diagram).expect("Failed to render chart");
+
+    assert_valid_svg(&svg);
+
+    // Count Y-axis labels - reference has 11 labels (0, 10, 20, ..., 100)
+    // We need at least the intermediate values (10, 30, 50, 70, 90)
+    assert!(svg.contains(">10<"), "Y-axis should have tick at 10");
+    assert!(svg.contains(">30<"), "Y-axis should have tick at 30");
+    assert!(svg.contains(">50<"), "Y-axis should have tick at 50");
+    assert!(svg.contains(">70<"), "Y-axis should have tick at 70");
+    assert!(svg.contains(">90<"), "Y-axis should have tick at 90");
+}
+
+#[test]
+fn test_line_plot_has_no_circles() {
+    // Reference implementation does not draw circles at line plot data points
+    let input = r#"xychart
+        x-axis [Jan, Feb, Mar, Apr, May, Jun]
+        y-axis 0 --> 100
+        line [15, 30, 40, 55, 70, 85]"#;
+
+    let diagram = parse(input).expect("Failed to parse chart");
+    let svg = render(&diagram).expect("Failed to render chart");
+
+    assert_valid_svg(&svg);
+
+    // Should have path for the line
+    assert!(svg.contains("<path"), "Should have path for line");
+
+    // Should NOT have circles for data points
+    assert!(
+        !svg.contains("<circle"),
+        "Line plots should not have circle markers (matching mermaid reference)"
+    );
+}
+
+#[test]
+fn test_axis_stroke_width_matches_reference() {
+    // Reference implementation uses stroke-width="2" for axis lines and ticks
+    let input = r#"xychart
+        x-axis [A, B, C]
+        y-axis 0 --> 100
+        bar [30, 60, 90]"#;
+
+    let diagram = parse(input).expect("Failed to parse chart");
+    let svg = render(&diagram).expect("Failed to render chart");
+
+    assert_valid_svg(&svg);
+
+    // Axis lines and ticks should have stroke-width="2"
+    // Check the xychart-axis class has stroke-width 2
+    assert!(
+        svg.contains("stroke-width=\"2\"") || svg.contains("stroke-width: 2"),
+        "Axis lines should have stroke-width of 2 (matching mermaid reference)"
+    );
+}
+
+#[test]
+fn test_font_sizes_match_reference() {
+    // Reference implementation uses:
+    // - Title: 20px
+    // - Labels: 14px
+    // - Axis title: 16px
+    let input = r#"xychart
+        title "Monthly Sales"
+        x-axis [Jan, Feb, Mar]
+        y-axis "Sales (units)" 0 --> 100
+        bar [20, 50, 80]"#;
+
+    let diagram = parse(input).expect("Failed to parse chart");
+    let svg = render(&diagram).expect("Failed to render chart");
+
+    assert_valid_svg(&svg);
+
+    // Check for larger font sizes matching reference
+    assert!(
+        svg.contains("font-size=\"20\"") || svg.contains("font-size: 20"),
+        "Title should use 20px font size (matching mermaid reference)"
+    );
+    assert!(
+        svg.contains("font-size=\"14\"") || svg.contains("font-size: 14"),
+        "Labels should use 14px font size (matching mermaid reference)"
+    );
+}
