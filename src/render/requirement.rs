@@ -23,13 +23,13 @@ struct BoxDimensions {
 }
 
 /// Default box dimensions - sized to match mermaid reference
-/// Mermaid requirement boxes are ~160px wide, elements are ~140px
+/// Mermaid uses padding=20 and gap=20 between elements
 const DEFAULT_REQ_BOX_WIDTH: f64 = 160.0;
 const DEFAULT_ELEM_BOX_WIDTH: f64 = 140.0;
-const DEFAULT_BOX_HEIGHT: f64 = 120.0;
-const BOX_PADDING: f64 = 10.0;
-const LINE_HEIGHT: f64 = 18.0;
-const HEADER_HEIGHT: f64 = 25.0;
+const DEFAULT_BOX_HEIGHT: f64 = 150.0;
+const BOX_PADDING: f64 = 20.0; // Match mermaid's padding
+const LINE_HEIGHT: f64 = 24.0; // Match mermaid's gap between elements
+const HEADER_HEIGHT: f64 = 30.0; // Slightly taller header
 const FONT_SIZE: f64 = 12.0;
 const HEADER_FONT_SIZE: f64 = 14.0;
 
@@ -177,8 +177,8 @@ impl ToLayoutGraph for RequirementDb {
 
         graph.options = LayoutOptions {
             direction,
-            node_spacing: 20.0,             // Match mermaid's tighter layout
-            layer_spacing: 50.0,            // Match mermaid's default rankSpacing
+            node_spacing: 50.0,  // Match mermaid's default nodeSpacing
+            layer_spacing: 50.0, // Match mermaid's default rankSpacing
             padding: Padding::uniform(8.0), // Match mermaid's padding
             ..Default::default()
         };
@@ -326,7 +326,7 @@ pub fn render_requirement(db: &RequirementDb, config: &RenderConfig) -> Result<S
                 width: DEFAULT_REQ_BOX_WIDTH,
                 height: DEFAULT_BOX_HEIGHT,
             });
-            let req_elem = render_requirement_box(req, x, y, dims.width, dims.height);
+            let req_elem = render_requirement_box(req, x, y, dims.width, dims.height, &config.theme);
             doc.add_element(req_elem);
         }
     }
@@ -338,7 +338,7 @@ pub fn render_requirement(db: &RequirementDb, config: &RenderConfig) -> Result<S
                 width: DEFAULT_ELEM_BOX_WIDTH,
                 height: 80.0,
             });
-            let elem_elem = render_element_box(elem, x, y, dims.width, dims.height);
+            let elem_elem = render_element_box(elem, x, y, dims.width, dims.height, &config.theme);
             doc.add_element(elem_elem);
         }
     }
@@ -353,12 +353,15 @@ fn render_requirement_box(
     y: f64,
     width: f64,
     height: f64,
+    theme: &Theme,
 ) -> SvgElement {
     // IMPORTANT: Render all shapes first, then all text elements
     // This ensures proper z-order (text appears on top of shapes)
     let mut children = Vec::new();
 
     // === SHAPES FIRST ===
+    // Use inline fill and stroke for better SVG compatibility
+    // (eval and some viewers don't parse CSS classes)
 
     // Main box
     children.push(SvgElement::Rect {
@@ -369,6 +372,8 @@ fn render_requirement_box(
         rx: Some(0.0),
         ry: Some(0.0),
         attrs: Attrs::new()
+            .with_fill(&theme.primary_color)
+            .with_stroke(&theme.primary_border_color)
             .with_stroke_width(2.0)
             .with_class("requirement-box"),
     });
@@ -381,7 +386,10 @@ fn render_requirement_box(
         height: HEADER_HEIGHT,
         rx: Some(0.0),
         ry: Some(0.0),
-        attrs: Attrs::new().with_class("requirement-header"),
+        attrs: Attrs::new()
+            .with_fill(&theme.primary_color)
+            .with_stroke(&theme.primary_border_color)
+            .with_class("requirement-header"),
     });
 
     // Divider line
@@ -390,7 +398,10 @@ fn render_requirement_box(
         y1: y + HEADER_HEIGHT,
         x2: x + width,
         y2: y + HEADER_HEIGHT,
-        attrs: Attrs::new().with_stroke_width(1.0).with_class("divider"),
+        attrs: Attrs::new()
+            .with_stroke(&theme.primary_border_color)
+            .with_stroke_width(1.0)
+            .with_class("divider"),
     });
 
     // === TEXT ELEMENTS AFTER SHAPES ===
@@ -493,7 +504,14 @@ fn render_requirement_box(
 }
 
 /// Render an element box
-fn render_element_box(elem: &Element, x: f64, y: f64, width: f64, height: f64) -> SvgElement {
+fn render_element_box(
+    elem: &Element,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+    theme: &Theme,
+) -> SvgElement {
     // IMPORTANT: Render all shapes first, then all text elements
     // This ensures proper z-order (text appears on top of shapes)
     // Content area
@@ -502,6 +520,7 @@ fn render_element_box(elem: &Element, x: f64, y: f64, width: f64, height: f64) -
 
     let mut children = vec![
         // === SHAPES FIRST ===
+        // Use inline fill and stroke for better SVG compatibility
         // Main box
         SvgElement::Rect {
             x,
@@ -511,6 +530,8 @@ fn render_element_box(elem: &Element, x: f64, y: f64, width: f64, height: f64) -
             rx: Some(0.0),
             ry: Some(0.0),
             attrs: Attrs::new()
+                .with_fill(&theme.primary_color)
+                .with_stroke(&theme.primary_border_color)
                 .with_stroke_width(2.0)
                 .with_class("element-box"),
         },
@@ -522,7 +543,10 @@ fn render_element_box(elem: &Element, x: f64, y: f64, width: f64, height: f64) -
             height: HEADER_HEIGHT,
             rx: Some(0.0),
             ry: Some(0.0),
-            attrs: Attrs::new().with_class("element-header"),
+            attrs: Attrs::new()
+                .with_fill(&theme.primary_color)
+                .with_stroke(&theme.primary_border_color)
+                .with_class("element-header"),
         },
         // Divider line
         SvgElement::Line {
@@ -530,7 +554,10 @@ fn render_element_box(elem: &Element, x: f64, y: f64, width: f64, height: f64) -
             y1: y + HEADER_HEIGHT,
             x2: x + width,
             y2: y + HEADER_HEIGHT,
-            attrs: Attrs::new().with_stroke_width(1.0).with_class("divider"),
+            attrs: Attrs::new()
+                .with_stroke(&theme.primary_border_color)
+                .with_stroke_width(1.0)
+                .with_class("divider"),
         },
         // === TEXT ELEMENTS AFTER SHAPES ===
         // Element label (in header)
