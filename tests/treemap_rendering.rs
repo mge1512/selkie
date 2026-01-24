@@ -647,6 +647,7 @@ fn has_clip_paths(doc: &Document<'_>) -> bool {
 }
 
 /// Get viewBox height from SVG
+#[allow(dead_code)]
 fn get_viewbox_height(doc: &Document<'_>) -> Option<f64> {
     let svg_root = doc.root_element();
     if let Some(viewbox) = svg_root.attribute("viewBox") {
@@ -685,10 +686,7 @@ fn treemap_visual_parity_leaf_font_size() {
 
     // Get font size from treemapLabel elements
     let font_size = get_font_size(&doc, "treemapLabel");
-    assert!(
-        font_size.is_some(),
-        "treemapLabel should have a font-size"
-    );
+    assert!(font_size.is_some(), "treemapLabel should have a font-size");
 
     // Allow some tolerance but it should be close to 38px (mermaid's default)
     // The reference uses 38px, we should use at least 30px for visual parity
