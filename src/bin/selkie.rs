@@ -23,6 +23,7 @@ use uuid::Uuid;
 
 #[cfg(feature = "eval")]
 use selkie::eval::{self, runner::DiagramInput, samples};
+use selkie::render::tui as tui_render;
 use selkie::render::{RenderConfig, Theme};
 use selkie::{parse, render_with_config};
 
@@ -185,6 +186,10 @@ struct EvalArgs {
     /// Useful in CI where Playwright/Chromium may not be available.
     #[arg(long)]
     use_repo_svgs: bool,
+
+    /// Evaluate TUI output instead of SVG (only flowchart diagrams)
+    #[arg(long)]
+    tui: bool,
 }
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, ValueEnum)]
@@ -206,6 +211,8 @@ enum OutputFormat {
     Png,
     #[cfg(feature = "pdf")]
     Pdf,
+    /// Character-art output for terminals
+    Tui,
 }
 
 impl OutputFormat {
@@ -372,6 +379,34 @@ fn run_render(args: RenderArgs) -> Result<(), Box<dyn std::error::Error>> {
         eprintln!("Parsed diagram successfully");
     }
 
+    // Check if TUI format is requested — uses a separate render path
+    let format_hint = args.output_format.unwrap_or_else(|| {
+        args.output
+            .as_deref()
+            .and_then(|p| {
+                if p == "-" {
+                    None
+                } else {
+                    OutputFormat::from_extension(p)
+                }
+            })
+            .unwrap_or(OutputFormat::Svg)
+    });
+
+    if format_hint == OutputFormat::Tui {
+        let output_str = render_tui(&diagram)?;
+        if args.verbose {
+            eprintln!("Rendered {} bytes of TUI output", output_str.len());
+        }
+        write_output(&args.output, output_str.as_bytes())?;
+        if !args.quiet && args.output.as_deref() != Some("-") {
+            if let Some(ref output) = args.output {
+                eprintln!("Created {}", output);
+            }
+        }
+        return Ok(());
+    }
+
     // Render to SVG
     let svg = render_with_config(&diagram, &config).map_err(|e| format!("Render error: {}", e))?;
 
@@ -411,6 +446,7 @@ fn run_render(args: RenderArgs) -> Result<(), Box<dyn std::error::Error>> {
                         let pdf_data = svg_to_pdf(&svg)?;
                         write_binary_output(&Some(output.clone()), &pdf_data)?;
                     }
+                    OutputFormat::Tui => unreachable!("TUI format handled above"),
                 }
                 if !args.quiet {
                     eprintln!("Created {}", output);
@@ -450,6 +486,7 @@ fn run_render(args: RenderArgs) -> Result<(), Box<dyn std::error::Error>> {
             let pdf_data = svg_to_pdf(&svg)?;
             write_binary_output(&args.output, &pdf_data)?;
         }
+        OutputFormat::Tui => unreachable!("TUI format handled above"),
     }
 
     if !args.quiet && args.output.as_deref() != Some("-") {
@@ -492,6 +529,11 @@ fn run_eval(args: EvalArgs) -> Result<(), Box<dyn std::error::Error>> {
             println!("Cache is empty. Run 'selkie eval' to populate.");
         }
         return Ok(());
+    }
+
+    // Handle --tui: run TUI-specific evaluation
+    if args.tui {
+        return run_eval_tui(args);
     }
 
     // Build evaluation config
@@ -685,6 +727,185 @@ fn run_eval(args: EvalArgs) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+/// Run TUI-specific evaluation: parse → layout → render TUI → parse TUI → check
+#[cfg(feature = "eval")]
+fn run_eval_tui(args: EvalArgs) -> Result<(), Box<dyn std::error::Error>> {
+    use selkie::diagrams::Diagram;
+    use selkie::eval::tui_checks;
+    use selkie::layout::{CharacterSizeEstimator, ToLayoutGraph};
+
+    // Get diagrams to evaluate (reuse same loading logic)
+    let inputs: Vec<DiagramInput> = match &args.target {
+        None => {
+            eprintln!("Using gallery samples (docs/sources/ + embedded)...");
+            samples::all_samples_owned()
+                .into_iter()
+                .map(DiagramInput::from)
+                .collect()
+        }
+        Some(target) => {
+            let path = PathBuf::from(target);
+            if path.is_dir() {
+                load_directory(&path)?
+            } else {
+                let content = fs::read_to_string(&path)
+                    .map_err(|e| format!("Failed to read {}: {}", target, e))?;
+                vec![DiagramInput {
+                    name: path
+                        .file_stem()
+                        .map(|s| s.to_string_lossy().to_string())
+                        .unwrap_or_else(|| "diagram".to_string()),
+                    source: Some(target.clone()),
+                    diagram_type: None,
+                    text: content,
+                }]
+            }
+        }
+    };
+
+    // Filter to flowchart-only (TUI renderer only supports flowcharts)
+    let flowcharts: Vec<_> = inputs
+        .iter()
+        .filter(|i| {
+            if let Some(ref filter) = args.diagram_type {
+                i.diagram_type.as_deref() == Some(filter.as_str())
+            } else {
+                // Default to flowchart only
+                i.diagram_type.as_deref() == Some("flowchart")
+                    || i.text.to_lowercase().starts_with("flowchart")
+                    || i.text.to_lowercase().starts_with("graph ")
+            }
+        })
+        .collect();
+
+    if flowcharts.is_empty() {
+        return Err("No flowchart diagrams to evaluate (TUI only supports flowcharts)".into());
+    }
+
+    eprintln!("Evaluating {} flowcharts in TUI mode...", flowcharts.len());
+
+    let estimator = CharacterSizeEstimator::default();
+    let mut total_issues = 0;
+    let mut total_errors = 0;
+    let mut total_diagrams = 0;
+    let mut total_similarity = 0.0;
+
+    for (i, input) in flowcharts.iter().enumerate() {
+        eprint!(
+            "\rEvaluating {}/{}: {}...",
+            i + 1,
+            flowcharts.len(),
+            input.name
+        );
+
+        total_diagrams += 1;
+
+        // Parse
+        let parsed = match selkie::parse(&input.text) {
+            Ok(p) => p,
+            Err(e) => {
+                eprintln!(" PARSE ERROR: {}", e);
+                total_errors += 1;
+                continue;
+            }
+        };
+
+        // Get FlowchartDb
+        let db = match parsed {
+            Diagram::Flowchart(ref db) => db,
+            _ => {
+                eprintln!(" SKIP: not a flowchart");
+                continue;
+            }
+        };
+
+        // Layout
+        let graph = match db.to_layout_graph(&estimator) {
+            Ok(g) => match selkie::layout::layout(g) {
+                Ok(g) => g,
+                Err(e) => {
+                    eprintln!(" LAYOUT ERROR: {}", e);
+                    total_errors += 1;
+                    continue;
+                }
+            },
+            Err(e) => {
+                eprintln!(" LAYOUT ERROR: {}", e);
+                total_errors += 1;
+                continue;
+            }
+        };
+
+        // Render TUI
+        let tui_output = match tui_render::render_flowchart_tui(db, &graph) {
+            Ok(output) => output,
+            Err(e) => {
+                eprintln!(" RENDER ERROR: {}", e);
+                total_errors += 1;
+                continue;
+            }
+        };
+
+        // Parse TUI output
+        let tui_struct = tui_checks::parse_tui(&tui_output);
+
+        // Run checks
+        let issues = tui_checks::check_tui_structure(&tui_struct, &graph);
+        let similarity = tui_checks::calculate_tui_similarity(&tui_struct, &graph);
+        total_similarity += similarity;
+
+        let error_count = issues
+            .iter()
+            .filter(|i| i.level == eval::Level::Error)
+            .count();
+        let warning_count = issues
+            .iter()
+            .filter(|i| i.level == eval::Level::Warning)
+            .count();
+        total_issues += issues.len();
+        total_errors += error_count;
+
+        if args.verbose && !issues.is_empty() {
+            eprintln!();
+            eprintln!(
+                "  {} ({} errors, {} warnings, similarity: {:.1}%):",
+                input.name,
+                error_count,
+                warning_count,
+                similarity * 100.0
+            );
+            for issue in &issues {
+                let level = match issue.level {
+                    eval::Level::Error => "ERROR",
+                    eval::Level::Warning => "WARN",
+                    eval::Level::Info => "INFO",
+                };
+                eprintln!("    [{}] {}: {}", level, issue.check, issue.message);
+            }
+        }
+    }
+    eprintln!();
+
+    // Summary
+    let avg_similarity = if total_diagrams > 0 {
+        total_similarity / total_diagrams as f64
+    } else {
+        0.0
+    };
+
+    eprintln!("TUI Evaluation Summary");
+    eprintln!("======================");
+    eprintln!("Diagrams:   {}", total_diagrams);
+    eprintln!("Issues:     {} ({} errors)", total_issues, total_errors);
+    eprintln!("Similarity: {:.1}% avg", avg_similarity * 100.0);
+
+    if total_errors > 0 {
+        process::exit(1);
+    }
+
+    Ok(())
+}
+
 /// Load diagrams from a directory of .mmd files
 #[cfg(feature = "eval")]
 fn load_directory(dir: &Path) -> Result<Vec<DiagramInput>, Box<dyn std::error::Error>> {
@@ -861,4 +1082,20 @@ fn svg_to_pdf(svg: &str) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     .map_err(|e| format!("Failed to convert to PDF: {}", e))?;
 
     Ok(pdf_data)
+}
+
+/// Render a diagram to TUI character art
+fn render_tui(diagram: &selkie::diagrams::Diagram) -> Result<String, Box<dyn std::error::Error>> {
+    use selkie::layout::{self, CharacterSizeEstimator, ToLayoutGraph};
+
+    match diagram {
+        selkie::diagrams::Diagram::Flowchart(db) => {
+            let estimator = CharacterSizeEstimator::default();
+            let graph = db.to_layout_graph(&estimator)?;
+            let graph = layout::layout(graph)?;
+            let output = tui_render::render_flowchart_tui(db, &graph)?;
+            Ok(output)
+        }
+        _ => Err("TUI format currently only supports flowchart diagrams".into()),
+    }
 }
