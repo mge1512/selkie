@@ -276,6 +276,7 @@ fn find_clear_label_position(
         }
     }
 
+    // No clear position found — skip this label rather than overwrite boxes
     None
 }
 
