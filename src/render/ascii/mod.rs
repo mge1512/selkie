@@ -187,8 +187,8 @@ pub fn render_er_ascii(db: &ErDb, graph: &LayoutGraph) -> Result<String> {
         let entity_name = id_to_name.get(node.id.as_str()).copied();
         let entity = entity_name.and_then(|n| entities.get(n));
 
-        // Calculate cell position (top-left based: dagre center coords are
-        // converted to top-left in apply_results_recursive)
+        // node.x/y are top-left coordinates (dagre center coords converted
+        // by apply_results_recursive), so use them directly as cell start.
         let cell_w = scale.to_cell_width(node.width);
         let cell_h = scale.to_cell_height(node.height);
         let col_start = scale.to_col(nx);
@@ -604,10 +604,14 @@ fn render_ascii_impl(
 
         let rendered = render_shape(&node.shape, &label, cell_w, cell_h);
 
-        // Position: node x,y is top-left (dagre center coords are converted
-        // to top-left in apply_results_recursive)
-        let col_start = scale.to_col(nx);
-        let row_start = scale.to_row(ny);
+        // node.x/y are top-left coordinates (dagre center was converted by
+        // apply_results_recursive). Compute the true center, then center the
+        // rendered shape on it — shapes can be wider/taller than the layout
+        // allocation when the label is longer than the size estimate.
+        let center_col = scale.to_col(nx + node.width / 2.0);
+        let center_row = scale.to_row(ny + node.height / 2.0);
+        let col_start = center_col.saturating_sub(rendered.width / 2);
+        let row_start = center_row.saturating_sub(rendered.height / 2);
 
         // Pass 1: Blit shape (borders can overwrite each other)
         for (r, line) in rendered.lines.iter().enumerate() {
@@ -1827,6 +1831,108 @@ mod tests {
         let (db, graph) = parse_and_layout_class(&input);
         let output = render_class_ascii(&db, &graph).unwrap();
         assert_no_box_overlap(&output);
+    }
+
+    /// Verify that render_ascii_impl centers shapes on the node's true center,
+    /// computed from top-left coordinates (not treating top-left as center).
+    ///
+    /// apply_results_recursive converts dagre center coords to top-left. The old
+    /// code used `to_col(nx).saturating_sub(width/2)` which treats top-left as
+    /// center. The fix computes true center: `to_col(nx + node.width/2)`.
+    #[test]
+    fn render_ascii_impl_uses_top_left_coords() {
+        let (db, graph) = parse_and_layout("flowchart TD\n    A[Hello] --> B[World]");
+        let output = render_flowchart_ascii(&db, &graph).unwrap();
+        let scale = CellScale::default();
+        let offset_y = graph.bounds_y.unwrap_or(0.0);
+
+        // Node B is positioned below A. Its center should be at ny + height/2.
+        let node_b = graph.nodes.iter().find(|n| n.id == "B").unwrap();
+        let ny_b = node_b.y.unwrap() - offset_y;
+
+        // Correct center row (computed from top-left)
+        let center_row = scale.to_row(ny_b + node_b.height / 2.0);
+        // Buggy center row (treats top-left as center)
+        let buggy_center_row = scale.to_row(ny_b);
+
+        // The label "World" appears at the center row of the rendered shape
+        let lines: Vec<&str> = output.lines().collect();
+        let world_row = lines
+            .iter()
+            .position(|line| line.contains("World"))
+            .expect("Should contain World");
+
+        // Label should be at the true center row, not the buggy one
+        assert_eq!(
+            world_row, center_row,
+            "World at row {} should be at center row {} (not buggy row {})\nOutput:\n{}",
+            world_row, center_row, buggy_center_row, output
+        );
+    }
+
+    /// Verify that render_er_ascii positions entities at their top-left coordinates.
+    ///
+    /// For the ORDER entity (second in vertical layout), the correct row is
+    /// to_row(ny)=10 but the buggy saturating_sub gives row=8 — a 2-row shift.
+    #[test]
+    fn render_er_ascii_uses_top_left_coords() {
+        let input =
+            "erDiagram\n    CUSTOMER ||--o{ ORDER : places\n    ORDER ||--|{ LINE-ITEM : contains";
+        let (db, graph) = parse_er_and_layout(input);
+        let output = render_er_ascii(&db, &graph).unwrap();
+        let scale = CellScale::default();
+
+        let offset_x = graph.bounds_x.unwrap_or(0.0);
+        let offset_y = graph.bounds_y.unwrap_or(0.0);
+
+        // Build entity name lookup
+        let entities = db.get_entities();
+        let id_to_name: HashMap<&str, &str> = entities
+            .iter()
+            .map(|(name, entity)| (entity.id.as_str(), name.as_str()))
+            .collect();
+
+        // Find ORDER node — it's positioned in the middle row, not at y=0
+        let order_node = graph
+            .nodes
+            .iter()
+            .find(|n| id_to_name.get(n.id.as_str()) == Some(&"ORDER"))
+            .expect("Should find ORDER node");
+
+        let nx = order_node.x.unwrap() - offset_x;
+        let ny = order_node.y.unwrap() - offset_y;
+        let expected_col = scale.to_col(nx);
+        let expected_row = scale.to_row(ny);
+        let cell_w = scale.to_cell_width(order_node.width);
+        let cell_h = scale.to_cell_height(order_node.height);
+        let buggy_col = expected_col.saturating_sub(cell_w / 2);
+        let buggy_row = expected_row.saturating_sub(cell_h / 2);
+
+        // Find where ORDER appears in the output
+        let lines: Vec<&str> = output.lines().collect();
+        let order_row = lines
+            .iter()
+            .position(|line| line.contains("ORDER") && !line.contains("CUSTOMER"))
+            .expect("Should contain ORDER label");
+
+        // ORDER label appears 1 row below the box top border (inside the header).
+        // Correct: row = expected_row + 1 = 11
+        // Buggy:   row = buggy_row + 1 = 9
+        assert_eq!(
+            order_row,
+            expected_row + 1,
+            "ORDER label at row {} should be at row {} (top-left {} + 1)\n\
+             With the bug it would be at row {} (buggy {} + 1)\n\
+             expected_col={} buggy_col={}\nOutput:\n{}",
+            order_row,
+            expected_row + 1,
+            expected_row,
+            buggy_row + 1,
+            buggy_row,
+            expected_col,
+            buggy_col,
+            output
+        );
     }
 
     #[test]
