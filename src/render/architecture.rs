@@ -7,7 +7,7 @@ use crate::diagrams::architecture::{
 };
 use crate::error::Result;
 use crate::layout::{
-    LayoutDirection, LayoutEdge, LayoutGraph, LayoutNode, LayoutOptions, NodeShape, Padding,
+    LayoutDirection, LayoutEdge, LayoutGraph, LayoutNode, LayoutOptions, NodeShape, Padding, Point,
     SizeEstimator, ToLayoutGraph,
 };
 
@@ -139,12 +139,13 @@ pub fn layout_architecture(
 }
 
 fn apply_architecture_layout(db: &ArchitectureDb, graph: &mut LayoutGraph) {
-    let node_ids: Vec<String> = db
+    let mut node_ids: Vec<String> = db
         .get_services()
         .into_iter()
         .map(|s| s.id.clone())
         .chain(db.get_junctions().into_iter().map(|j| j.id.clone()))
         .collect();
+    node_ids.sort();
 
     let adj = build_adjacency(db, &node_ids);
     let node_root_groups = build_node_root_group_map(db);
@@ -210,21 +211,202 @@ fn apply_architecture_layout(db: &ArchitectureDb, graph: &mut LayoutGraph) {
         }
     }
 
+    route_architecture_edges(db, graph);
+
     graph.compute_bounds();
+}
+
+/// Compute bend_points for each architecture edge so the ASCII renderer can
+/// draw braille lines.  Uses the same port / bend logic as the SVG renderer.
+fn route_architecture_edges(_db: &ArchitectureDb, graph: &mut LayoutGraph) {
+    // Build a lookup from edge metadata to the original ArchitectureEdge so we
+    // can read lhs_dir / rhs_dir / group flags.
+    for layout_edge in &mut graph.edges {
+        let lhs_dir_str = layout_edge.metadata.get("lhs_dir").cloned();
+        let rhs_dir_str = layout_edge.metadata.get("rhs_dir").cloned();
+        let lhs_group = layout_edge
+            .metadata
+            .get("lhs_group")
+            .map(|v| v == "true")
+            .unwrap_or(false);
+        let rhs_group = layout_edge
+            .metadata
+            .get("rhs_group")
+            .map(|v| v == "true")
+            .unwrap_or(false);
+
+        let lhs_dir = lhs_dir_str
+            .as_deref()
+            .and_then(|s| s.chars().next())
+            .and_then(ArchitectureDirection::from_char);
+        let rhs_dir = rhs_dir_str
+            .as_deref()
+            .and_then(|s| s.chars().next())
+            .and_then(ArchitectureDirection::from_char);
+
+        let (Some(lhs_dir), Some(rhs_dir)) = (lhs_dir, rhs_dir) else {
+            continue;
+        };
+
+        let source_id = layout_edge.sources.first().cloned();
+        let target_id = layout_edge.targets.first().cloned();
+        let (Some(source_id), Some(target_id)) = (source_id, target_id) else {
+            continue;
+        };
+
+        let source_node = graph.nodes.iter().find(|n| n.id == source_id);
+        let target_node = graph.nodes.iter().find(|n| n.id == target_id);
+        let (Some(source_node), Some(target_node)) = (source_node, target_node) else {
+            continue;
+        };
+
+        let start = architecture_node_port(source_node, lhs_dir);
+        let end = architecture_node_port(target_node, rhs_dir);
+        let (Some(mut start), Some(mut end)) = (start, end) else {
+            continue;
+        };
+
+        // Shift for group boundary edges
+        let group_edge_shift = ARCH_PADDING + 4.0;
+        if lhs_group {
+            if lhs_dir.is_x() {
+                start.x += if lhs_dir == ArchitectureDirection::Left {
+                    -group_edge_shift
+                } else {
+                    group_edge_shift
+                };
+            } else {
+                start.y += if lhs_dir == ArchitectureDirection::Top {
+                    -group_edge_shift
+                } else {
+                    group_edge_shift + ARCH_EDGE_GROUP_LABEL_SHIFT
+                };
+            }
+        }
+        if rhs_group {
+            if rhs_dir.is_x() {
+                end.x += if rhs_dir == ArchitectureDirection::Left {
+                    -group_edge_shift
+                } else {
+                    group_edge_shift
+                };
+            } else {
+                end.y += if rhs_dir == ArchitectureDirection::Top {
+                    -group_edge_shift
+                } else {
+                    group_edge_shift + ARCH_EDGE_GROUP_LABEL_SHIFT
+                };
+            }
+        }
+
+        // Shrink junction ports inward
+        let half_icon = ARCH_ICON_SIZE / 2.0;
+        let is_source_junction = source_node
+            .metadata
+            .get("node_type")
+            .map(|v| v == "junction")
+            .unwrap_or(false);
+        let is_target_junction = target_node
+            .metadata
+            .get("node_type")
+            .map(|v| v == "junction")
+            .unwrap_or(false);
+        if !lhs_group && is_source_junction {
+            if lhs_dir.is_x() {
+                start.x += if lhs_dir == ArchitectureDirection::Left {
+                    half_icon
+                } else {
+                    -half_icon
+                };
+            } else {
+                start.y += if lhs_dir == ArchitectureDirection::Top {
+                    half_icon
+                } else {
+                    -half_icon
+                };
+            }
+        }
+        if !rhs_group && is_target_junction {
+            if rhs_dir.is_x() {
+                end.x += if rhs_dir == ArchitectureDirection::Left {
+                    half_icon
+                } else {
+                    -half_icon
+                };
+            } else {
+                end.y += if rhs_dir == ArchitectureDirection::Top {
+                    half_icon
+                } else {
+                    -half_icon
+                };
+            }
+        }
+
+        // Compute bend points using the shared edge-point function
+        let points = architecture_edge_points(start, end, lhs_dir, rhs_dir);
+
+        // Set label position at midpoint of path
+        if layout_edge.label.is_some() && points.len() >= 2 {
+            layout_edge.label_position = crate::layout::geometric_midpoint(&points);
+        }
+
+        layout_edge.bend_points = points;
+    }
+}
+
+/// Get the port position on a node for a given direction.
+///
+/// Used by both the SVG and ASCII renderers to determine where edges
+/// attach to a node's bounding box.
+pub fn architecture_node_port(node: &LayoutNode, dir: ArchitectureDirection) -> Option<Point> {
+    let (x, y) = (node.x?, node.y?);
+    let w = node.width;
+    let h = node.height;
+    Some(match dir {
+        ArchitectureDirection::Left => Point::new(x, y + h / 2.0),
+        ArchitectureDirection::Right => Point::new(x + w, y + h / 2.0),
+        ArchitectureDirection::Top => Point::new(x + w / 2.0, y),
+        ArchitectureDirection::Bottom => Point::new(x + w / 2.0, y + h),
+    })
+}
+
+/// Compute bend points for an architecture edge between two ports.
+///
+/// For same-axis connections (both horizontal or both vertical), returns a
+/// straight line. For cross-axis connections, returns an L-shaped bend.
+pub fn architecture_edge_points(
+    start: Point,
+    end: Point,
+    source_dir: ArchitectureDirection,
+    target_dir: ArchitectureDirection,
+) -> Vec<Point> {
+    let is_cross_axis =
+        (source_dir.is_x() && target_dir.is_y()) || (source_dir.is_y() && target_dir.is_x());
+    if is_cross_axis {
+        let bend = if source_dir.is_y() {
+            Point::new(start.x, end.y)
+        } else {
+            Point::new(end.x, start.y)
+        };
+        vec![start, bend, end]
+    } else {
+        vec![start, end]
+    }
 }
 
 fn apply_overlap_jitter(
     positions: &mut HashMap<String, (f64, f64)>,
-    node_root_groups: &HashMap<String, Option<String>>,
+    _node_root_groups: &HashMap<String, Option<String>>,
 ) {
-    let mut counts: HashMap<(i64, i64, Option<String>), usize> = HashMap::new();
+    // Use global position tracking (ignoring root groups) so overlaps between
+    // nodes in different groups are also detected and jittered.
+    let mut counts: HashMap<(i64, i64), usize> = HashMap::new();
     let mut ids: Vec<String> = positions.keys().cloned().collect();
     ids.sort();
 
     for id in ids {
         if let Some((x, y)) = positions.get_mut(&id) {
-            let root = node_root_groups.get(&id).cloned().unwrap_or(None);
-            let key = (x.round() as i64, y.round() as i64, root);
+            let key = (x.round() as i64, y.round() as i64);
             let count = counts.entry(key).or_insert(0);
             if *count > 0 {
                 let offset = ARCH_ICON_SIZE * 0.25 * (*count as f64);
@@ -933,7 +1115,13 @@ fn build_adjacency(
 
         if let Some(pair) = ArchitectureDirectionPair::new(edge.lhs_dir, edge.rhs_dir) {
             let entry = adj.entry(edge.lhs_id.clone()).or_default();
-            if let Some(existing) = entry.iter_mut().find(|(p, _, _)| *p == pair) {
+            // Only replace when the target is the same node (updated distance).
+            // Multiple edges with the same direction pair but different targets must
+            // all be kept so the BFS can reach every neighbor.
+            if let Some(existing) = entry
+                .iter_mut()
+                .find(|(p, t, _)| *p == pair && *t == edge.rhs_id)
+            {
                 *existing = (pair, edge.rhs_id.clone(), distance);
             } else {
                 entry.push((pair, edge.rhs_id.clone(), distance));
@@ -941,7 +1129,10 @@ fn build_adjacency(
         }
         if let Some(pair) = ArchitectureDirectionPair::new(edge.rhs_dir, edge.lhs_dir) {
             let entry = adj.entry(edge.rhs_id.clone()).or_default();
-            if let Some(existing) = entry.iter_mut().find(|(p, _, _)| *p == pair) {
+            if let Some(existing) = entry
+                .iter_mut()
+                .find(|(p, t, _)| *p == pair && *t == edge.lhs_id)
+            {
                 *existing = (pair, edge.lhs_id.clone(), distance);
             } else {
                 entry.push((pair, edge.lhs_id.clone(), distance));
@@ -1018,47 +1209,25 @@ fn resolve_spatial_collisions(
     spatial_map: &mut HashMap<String, (i32, i32)>,
     insertion_order: &[String],
     placement_pairs: &HashMap<String, ArchitectureDirectionPair>,
-    node_root_groups: &HashMap<String, Option<String>>,
+    _node_root_groups: &HashMap<String, Option<String>>,
 ) {
-    let mut occupied_by_root: HashMap<Option<String>, HashSet<(i32, i32)>> = HashMap::new();
-    for (id, pos) in spatial_map.iter() {
-        let root = node_root_groups.get(id).cloned().unwrap_or(None);
-        occupied_by_root.entry(root).or_default().insert(*pos);
-    }
-    let mut coord_nodes: HashMap<(i32, i32), Vec<String>> = HashMap::new();
+    // Use a single global occupied set so collisions between nodes in different
+    // root groups are also detected and resolved.
+    let mut occupied: HashSet<(i32, i32)> = HashSet::new();
 
     for id in insertion_order {
-        if let Some(pos) = spatial_map.get(id) {
-            coord_nodes.entry(*pos).or_default().push(id.clone());
-        }
-    }
-
-    for (pos, nodes) in coord_nodes {
-        let mut nodes_by_root: HashMap<Option<String>, Vec<String>> = HashMap::new();
-        for node_id in nodes {
-            let root = node_root_groups.get(&node_id).cloned().unwrap_or(None);
-            nodes_by_root.entry(root).or_default().push(node_id);
-        }
-
-        for (root, nodes) in nodes_by_root {
-            if nodes.len() < 2 {
-                continue;
+        let Some(&pos) = spatial_map.get(id) else {
+            continue;
+        };
+        if occupied.contains(&pos) {
+            let pair = placement_pairs.get(id);
+            let new_pos = resolve_collision(&occupied, pos, pair);
+            if let Some(entry) = spatial_map.get_mut(id) {
+                *entry = new_pos;
             }
-
-            let Some((keep, relocate)) = nodes.split_last() else {
-                continue;
-            };
-            let _ = keep;
-
-            let occupied = occupied_by_root.entry(root).or_default();
-            for node_id in relocate {
-                let pair = placement_pairs.get(node_id);
-                let new_pos = resolve_collision(occupied, pos, pair);
-                if let Some(entry) = spatial_map.get_mut(node_id) {
-                    *entry = new_pos;
-                }
-                occupied.insert(new_pos);
-            }
+            occupied.insert(new_pos);
+        } else {
+            occupied.insert(pos);
         }
     }
 }
@@ -1068,9 +1237,11 @@ fn resolve_collision(
     start: (i32, i32),
     pair: Option<&ArchitectureDirectionPair>,
 ) -> (i32, i32) {
+    // Search in the same direction as the placement (source direction) so that
+    // colliding nodes spread further away from the parent rather than back toward it.
     let primary = pair
-        .map(|p| opposite_dir(p.source))
-        .unwrap_or(ArchitectureDirection::Left);
+        .map(|p| p.source)
+        .unwrap_or(ArchitectureDirection::Right);
     let (primary_dx, primary_dy) = primary_axis_step(primary);
 
     for step in 1..=MAX_COLLISION_RADIUS {
@@ -1106,15 +1277,6 @@ fn resolve_collision(
     }
 
     start
-}
-
-fn opposite_dir(dir: ArchitectureDirection) -> ArchitectureDirection {
-    match dir {
-        ArchitectureDirection::Left => ArchitectureDirection::Right,
-        ArchitectureDirection::Right => ArchitectureDirection::Left,
-        ArchitectureDirection::Top => ArchitectureDirection::Bottom,
-        ArchitectureDirection::Bottom => ArchitectureDirection::Top,
-    }
 }
 
 fn preferred_search_dirs(dir: ArchitectureDirection) -> [(i32, i32); 4] {
@@ -1513,6 +1675,101 @@ mod tests {
         let c_pos = (node_c.x.unwrap(), node_c.y.unwrap());
 
         assert_ne!(b_pos, c_pos, "Nodes B and C should not overlap");
+    }
+
+    #[test]
+    fn test_adjacency_preserves_multiple_targets_same_direction() {
+        // build_adjacency must not replace an existing neighbor when a second edge
+        // uses the same direction pair (e.g., core:R→cache:L and core:R→db:L).
+        let mut db = ArchitectureDb::new();
+        db.add_service(ArchitectureService::new("core".to_string()))
+            .unwrap();
+        db.add_service(ArchitectureService::new("cache".to_string()))
+            .unwrap();
+        db.add_service(ArchitectureService::new("dbnode".to_string()))
+            .unwrap();
+
+        db.add_edge(ArchitectureEdge::new(
+            "core".to_string(),
+            ArchitectureDirection::Right,
+            "cache".to_string(),
+            ArchitectureDirection::Left,
+        ))
+        .unwrap();
+        db.add_edge(ArchitectureEdge::new(
+            "core".to_string(),
+            ArchitectureDirection::Right,
+            "dbnode".to_string(),
+            ArchitectureDirection::Left,
+        ))
+        .unwrap();
+
+        let node_ids: Vec<String> = vec!["core", "cache", "dbnode"]
+            .into_iter()
+            .map(String::from)
+            .collect();
+        let adj = build_adjacency(&db, &node_ids);
+
+        let core_neighbors = adj.get("core").unwrap();
+        let targets: Vec<&str> = core_neighbors.iter().map(|(_, t, _)| t.as_str()).collect();
+        assert!(
+            targets.contains(&"cache"),
+            "core's adjacency should include cache, got: {:?}",
+            targets
+        );
+        assert!(
+            targets.contains(&"dbnode"),
+            "core's adjacency should include dbnode, got: {:?}",
+            targets
+        );
+    }
+
+    #[test]
+    fn test_cross_group_collision_resolved() {
+        // Nodes in different root groups at the same grid position must be separated
+        // by resolve_spatial_collisions (not just by group separation later).
+        let node_root_groups: HashMap<String, Option<String>> = [
+            ("center".to_string(), Some("G1".to_string())),
+            ("nodeA".to_string(), Some("G1".to_string())),
+            ("nodeB".to_string(), Some("G2".to_string())),
+        ]
+        .into_iter()
+        .collect();
+
+        // nodeA and nodeB placed at same grid position via BFS
+        let mut spatial_map: HashMap<String, (i32, i32)> = HashMap::new();
+        spatial_map.insert("center".to_string(), (0, 0));
+        spatial_map.insert("nodeA".to_string(), (1, 0));
+        spatial_map.insert("nodeB".to_string(), (1, 0)); // collision!
+
+        let insertion_order = vec![
+            "center".to_string(),
+            "nodeA".to_string(),
+            "nodeB".to_string(),
+        ];
+        let pair = ArchitectureDirectionPair::new(
+            ArchitectureDirection::Right,
+            ArchitectureDirection::Left,
+        )
+        .unwrap();
+        let mut placement_pairs: HashMap<String, ArchitectureDirectionPair> = HashMap::new();
+        placement_pairs.insert("nodeA".to_string(), pair);
+        placement_pairs.insert("nodeB".to_string(), pair);
+
+        resolve_spatial_collisions(
+            &mut spatial_map,
+            &insertion_order,
+            &placement_pairs,
+            &node_root_groups,
+        );
+
+        let a_pos = spatial_map.get("nodeA").unwrap();
+        let b_pos = spatial_map.get("nodeB").unwrap();
+        assert_ne!(
+            a_pos, b_pos,
+            "Cross-group collision must be resolved: nodeA={:?}, nodeB={:?}",
+            a_pos, b_pos
+        );
     }
 
     #[test]
