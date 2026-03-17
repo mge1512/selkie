@@ -1352,6 +1352,18 @@ fn write_binary_output(
     Ok(())
 }
 
+#[cfg(any(feature = "png", feature = "pdf"))]
+fn best_family<'a>(fontdb: &resvg::usvg::fontdb::Database, candidates: &[&'a str]) -> &'a str {
+    for name in candidates {
+        if fontdb.faces().any(|f| {
+            f.families.iter().any(|(n, _): &(String, _)| n.eq_ignore_ascii_case(name))
+        }) {
+            return name;
+        }
+    }
+    candidates[0]
+}
+
 /// Convert SVG string to PNG bytes using resvg
 #[cfg(feature = "png")]
 fn svg_to_png(
@@ -1367,11 +1379,20 @@ fn svg_to_png(
     let fontdb = opt.fontdb_mut();
     fontdb.load_system_fonts();
 
-    // Set default font families to use when specified fonts aren't found
-    // This ensures text renders even if "trebuchet ms" isn't available
-    fontdb.set_sans_serif_family("Arial");
-    fontdb.set_serif_family("Times New Roman");
-    fontdb.set_monospace_family("Courier New");
+    // Find best font
+    fontdb.set_sans_serif_family(best_family(&fontdb, &[
+        "Liberation Sans", "DejaVu Sans", "Noto Sans",    // Linux
+        "Helvetica Neue", "Helvetica",                    // macOS
+        "Arial",                                          // Windows
+    ]));
+    fontdb.set_serif_family(best_family(&fontdb, &[
+        "Liberation Serif", "DejaVu Serif", "Noto Serif",
+        "Times New Roman", "Georgia",
+    ]));
+    fontdb.set_monospace_family(best_family(&fontdb, &[
+        "Liberation Mono", "DejaVu Sans Mono", "Noto Mono",
+        "Menlo", "Courier New",
+    ]));
 
     // Parse SVG
     let tree =
@@ -1422,11 +1443,20 @@ fn svg_to_pdf(svg: &str) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     let fontdb = opt.fontdb_mut();
     fontdb.load_system_fonts();
 
-    // Set default font families to use when specified fonts aren't found
-    // This ensures text renders even if "trebuchet ms" isn't available
-    fontdb.set_sans_serif_family("Arial");
-    fontdb.set_serif_family("Times New Roman");
-    fontdb.set_monospace_family("Courier New");
+    // Find best font
+    fontdb.set_sans_serif_family(best_family(&fontdb, &[
+        "Liberation Sans", "DejaVu Sans", "Noto Sans",    // Linux
+        "Helvetica Neue", "Helvetica",                    // macOS
+        "Arial",                                          // Windows
+    ]));
+    fontdb.set_serif_family(best_family(&fontdb, &[
+        "Liberation Serif", "DejaVu Serif", "Noto Serif",
+        "Times New Roman", "Georgia",
+    ]));
+    fontdb.set_monospace_family(best_family(&fontdb, &[
+        "Liberation Mono", "DejaVu Sans Mono", "Noto Mono",
+        "Menlo", "Courier New",
+    ]));
 
     // Parse SVG
     let tree =
